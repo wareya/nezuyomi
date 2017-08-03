@@ -716,21 +716,21 @@ std::string u16_to_u8(const wchar_t * text)
             }
             else if(codepoint < 0x800)
             {
-                ret += char((codepoint>> 6)&0b0001'1111|0b1100'0000);
-                ret += char((codepoint>> 0)&0b0011'1111|0b1000'0000);
+                ret += char(((codepoint>> 6)&0b0001'1111)|0b1100'0000);
+                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
             }
             else if(codepoint < 0x10000)
             {
-                ret += char((codepoint>>12)&0b0000'1111|0b1110'0000);
-                ret += char((codepoint>> 6)&0b0011'1111|0b1000'0000);
-                ret += char((codepoint>> 0)&0b0011'1111|0b1000'0000);
+                ret += char(((codepoint>>12)&0b0000'1111)|0b1110'0000);
+                ret += char(((codepoint>> 6)&0b0011'1111)|0b1000'0000);
+                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
             }
             else if(codepoint < 0x110000)
             {
-                ret += char((codepoint>>18)&0b0000'0111|0b1111'0000);
-                ret += char((codepoint>>12)&0b0011'1111|0b1000'0000);
-                ret += char((codepoint>> 6)&0b0011'1111|0b1000'0000);
-                ret += char((codepoint>> 0)&0b0011'1111|0b1000'0000);
+                ret += char(((codepoint>>18)&0b0000'0111)|0b1111'0000);
+                ret += char(((codepoint>>12)&0b0011'1111)|0b1000'0000);
+                ret += char(((codepoint>> 6)&0b0011'1111)|0b1000'0000);
+                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
             }
         }
         codepoint = utf16_pull(text, len, &advance);
@@ -787,7 +787,7 @@ int wmain (int argc, wchar_t **argv)
             mydir.push_back(path);
         }
     }
-    if(index == mydir.size()) index = 0;
+    if(index == int(mydir.size())) index = 0;
     
     auto myimage = myrenderer.load_texture(mydir[index].data());
     
@@ -974,6 +974,5 @@ int wmain (int argc, wchar_t **argv)
     }
     glfwDestroyWindow(win);
     
-    
-    puts("init worked");
+    return 0;
 }
