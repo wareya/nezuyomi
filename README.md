@@ -1,7 +1,7 @@
 # nezuyomi
 Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
-Nezuyomi requires OpenGL 3.3 or greater. Nezuyomi is experimental.
+Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. Nezuyomi is experimental.
 
 Downscaling uses jinc at minor downscaling factors, and sinc at major downscaling factors.
 
