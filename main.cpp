@@ -2,6 +2,10 @@
 #include <GLFW/glfw3.h>
 
 #include <stdio.h>
+#include <math.h>
+#ifndef M_PI
+#define M_PI 3.1415926435
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "include/stb_image_wrapper.h"
@@ -63,7 +67,7 @@ struct renderer {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);//GL_LINEAR_MIPMAP_NEAREST);
             checkerr(__LINE__);
         }
     };
@@ -173,8 +177,11 @@ struct renderer {
     unsigned int fshader;
     unsigned int program;
     
+    float jinctexture[128];
+    float sinctexture[128];
+    
     GLFWwindow * win;
-    postprogram * copy;
+    postprogram * copy, * sharpen;
     renderer()
     {
         glfwSwapInterval(1);
@@ -183,13 +190,22 @@ struct renderer {
         
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-        win = glfwCreateWindow(1111*2/3-1, 600, "Hello, World!", NULL, NULL);
+        win = glfwCreateWindow(1104/2-2, 600, "Hello, World!", NULL, NULL);
         
         if(!win) puts("glfw failed to init"), exit(0);
         glfwMakeContextCurrent(win);
         
         if(gl3wInit()) puts("gl3w failed to init"), exit(0);
         
+        for(int i = 0; i < 128; i++)
+        {
+            //jinctexture[i] = sin(float(i)*M_PI/4)*0.5+0.5;///(float(i)*M_PI/4)*0.5+0.5;
+            if(i == 0) jinctexture[i] = 1.0;
+            else       jinctexture[i] = 2*std::cyl_bessel_j(1, float(i*M_PI)/4)/(float(i*M_PI)/4)*0.5+0.5;
+            
+            if(i == 0) sinctexture[i] = 1.0;
+            else       sinctexture[i] = sin(float(i*M_PI))/(float(i*M_PI))*0.5+0.5;
+        }
         
         //glfwSwapBuffers(win);
         glfwGetFramebufferSize(win, &w, &h);
@@ -235,10 +251,12 @@ struct renderer {
         const char * fshadersource = 
         "#version 330 core\n\
         uniform sampler2D mytexture;\n\
+        uniform sampler2D myJincLookup;\n\
         uniform vec2 mySize;\n\
         uniform vec2 myScale;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
+        //int lod;\n\
         vec2 offsetRoundedCoord(int a, int b)\n\
         {\n\
             return vec2((floor(myTexCoord.x*(mySize.x)-0.5)+a+0.5)/(mySize.x),\n\
@@ -253,19 +271,19 @@ struct renderer {
             return vec2(mod(myTexCoord.x*(mySize.x)+0.5, 1),\n\
                         mod(myTexCoord.y*(mySize.y)+0.5, 1));\n\
         }\n\
-        vec2 basicRoundedCoord(int a, int b)\n\
+        vec2 lodRoundedPixel(int a, int b, vec2 size)\n\
         {\n\
-            return vec2((floor(myTexCoord.x*(mySize.x))+a)/(mySize.x),\n\
-                        (floor(myTexCoord.y*(mySize.y))+b)/(mySize.y));\n\
+            return vec2((floor(myTexCoord.x*(size.x)-0.5)+a+0.5)/(size.x),\n\
+                        (floor(myTexCoord.y*(size.y)-0.5)+b+0.5)/(size.y));\n\
         }\n\
-        vec4 basicRoundedPixel(int a, int b)\n\
+        vec4 lodRoundedPixel(int a, int b, vec2 size, int lod)\n\
         {\n\
-            return texture2D(mytexture, basicRoundedCoord(a, b));\n\
+            return textureLod(mytexture, lodRoundedPixel(a, b, size), lod);\n\
         }\n\
-        vec2 downscalingPhase()\n\
+        vec2 downscalingPhase(vec2 size)\n\
         {\n\
-            return vec2(mod(myTexCoord.x*(mySize.x), 1),\n\
-                        mod(myTexCoord.y*(mySize.y), 1));\n\
+            return vec2(mod(myTexCoord.x*(size.x)+0.5, 1),\n\
+                        mod(myTexCoord.y*(size.y)+0.5, 1));\n\
         }\n\
         vec4 hermite(vec4 a, vec4 b, vec4 c, vec4 d, float i)\n\
         {\n\
@@ -293,46 +311,66 @@ struct renderer {
             vec4 c4 = hermiterow(+2,ix);\n\
             return hermite(c1, c2, c3, c4, iy);\n\
         }\n\
+        float jinc(float x)\n\
+        {\n\
+            return texture2D(myJincLookup, vec2(x*4/128, 0)).r*2-1;\n\
+        }\n\
         float sinc(float x)\n\
         {\n\
             if(x == 0) return 1;\n\
-            else return sin(x*M_PI)/(x*M_PI);\n\
+            else       return sin(x*M_PI)/(x*M_PI);\n\
         }\n\
-        float samplewindow(float x, float diameter)\n\
+        float jincwindow(float x, float radius)\n\
         {\n\
-            //if(x < -1 || x > 1) return 0;\n\
-            //return cos(x*M_PI)*0.5+0.5;\n\
-            //return cos(x*M_PI*3/4)*cos(x*M_PI/4);\n\
-            return sinc(x) * cos(x*M_PI/diameter);\n\
+            if(x < -radius || x > radius) return 0;\n\
+            return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
-        vec4 supersamplerow(int y, float i)\n\
+        float sincwindow(float x, float radius)\n\
         {\n\
-            int radius = 3;\n\
-            int low = int(ceil(-radius/myScale.x + i));\n\
-            int high = int(floor(radius/myScale.x + i));\n\
-            vec4 c = vec4(0);\n\
-            float sampleWeight = 0;\n\
-            for(int j = low; j <= high; j++)\n\
+            if(x < -radius || x > radius) return 0;\n\
+            return sinc(x) * (cos(x*M_PI/4/radius)*0.5+0.5);\n\
+        }\n\
+        bool supersamplemode;\n\
+        vec4 supersamplegrid()\n\
+        {\n\
+            int lod = 0;\n\
+            float radius;\n\
+            if(supersamplemode)\n\
+                radius = 8;\n\
+            else\n\
+                radius = 2.5;\n\
+            vec2 scale = myScale;\n\
+            if(scale.x > 0 && scale.x < 0.25)\n\
             {\n\
-                float thisWeight = samplewindow((j-i)*myScale.x, radius*2);\n\
-                sampleWeight += thisWeight;\n\
-                c += basicRoundedPixel(j, y)*thisWeight;\n\
+                radius /= 2;\n\
+                scale *= 2;\n\
+                lod += 1;\n\
             }\n\
-            c /= sampleWeight;\n\
-            return c;\n\
-        }\n\
-        vec4 supersamplegrid(float ix, float i)\n\
-        {\n\
-            int radius = 3;\n\
-            int low = int(ceil(-radius/myScale.y + i));\n\
-            int high = int(floor(radius/myScale.y + i));\n\
+            if(radius < 1) radius = 1;\n\
+            ivec2 size = textureSize(mytexture, lod);\n\
+            vec2 phase = downscalingPhase(size);\n\
+            float ix = phase.x;\n\
+            float iy = phase.y;\n\
+            int lowi  = int(floor(-radius/scale.y + iy));\n\
+            int highi = int(ceil(radius/scale.y + iy));\n\
+            int lowj  = int(floor(-radius/scale.x + ix));\n\
+            int highj = int(ceil(radius/scale.x + ix));\n\
             vec4 c = vec4(0);\n\
             float sampleWeight = 0;\n\
-            for(int j = low; j <= high; j++)\n\
+            for(int i = lowi; i <= highi; i++)\n\
             {\n\
-                float thisWeight = samplewindow((j-i)*myScale.y, radius*2);\n\
-                sampleWeight += thisWeight;\n\
-                c += supersamplerow(j, ix)*thisWeight;\n\
+                for(int j = lowj; j <= highj; j++)\n\
+                {\n\
+                    float x = (i-ix)*scale.x;\n\
+                    float y = (j-iy)*scale.y;\n\
+                    float weight;\n\
+                    if(supersamplemode)\n\
+                        weight = jincwindow(sqrt(x*x+y*y), radius);\n\
+                    else\n\
+                        weight = sincwindow(x, radius) * sincwindow(y, radius);\n\
+                    sampleWeight += weight;\n\
+                    c += lodRoundedPixel(i, j, size, lod)*weight;\n\
+                }\n\
             }\n\
             c /= sampleWeight;\n\
             return c;\n\
@@ -341,8 +379,8 @@ struct renderer {
         {\n\
             if(myScale.x < 1 || myScale.y < 1)\n\
             {\n\
-                vec2 phase = downscalingPhase();\n\
-                gl_FragColor =  supersamplegrid(phase.x, phase.y);\n\
+                supersamplemode = !(myScale.x < 0.5 && myScale.y < 0.5);\n\
+                gl_FragColor =  supersamplegrid();\n\
             }\n\
             else\n\
             {\n\
@@ -400,16 +438,16 @@ struct renderer {
         
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "mytexture"), 0);
+        glUniform1i(glGetUniformLocation(program, "myJincLookup"), 1);
         
         checkerr(__LINE__);
         
         glDeleteShader(fshader);
         glDeleteShader(vshader);
         
-        
         checkerr(__LINE__);
         
-        // FBO program
+        // FBO programs
         
         copy = new postprogram("copy", 
         "#version 330 core\n\
@@ -423,6 +461,51 @@ struct renderer {
         glUseProgram(copy->program);
         checkerr(__LINE__);
         glUniform1i(glGetUniformLocation(copy->program, "mytexture"), 0);
+        checkerr(__LINE__);
+        
+        sharpen = new postprogram("sharpen", 
+        "#version 330 core\n\
+        uniform sampler2D mytexture;\n\
+        uniform sampler2D myJincLookup;\n\
+        varying vec2 myTexCoord;\n\
+        #define M_PI 3.1415926435\n\
+        float jinc(float x)\n\
+        {\n\
+            return texture2D(myJincLookup, vec2(x*4/128, 0)).r*2-1;\n\
+        }\n\
+        float window(float x)\n\
+        {\n\
+            if(x < -M_PI || x > M_PI) return 0;\n\
+            else return cos(x*M_PI);\n\
+        }\n\
+        float samplewindow(float x, float diameter)\n\
+        {\n\
+            return jinc(x) * window(x/diameter);\n\
+        }\n\
+        void main()\n\
+        {\n\
+            ivec2 size = textureSize(mytexture, 0);\n\
+            vec2 texel = myTexCoord*size;\n\
+            vec4 color = vec4(0);\n\
+            float power = 0;\n\
+            int radius = 4;\n\
+            float blur = 1;\n\
+            for(int i = -radius; i <= radius; i++)\n\
+            {\n\
+                for(int j = -radius; j <= radius; j++)\n\
+                {\n\
+                    float weight = samplewindow(sqrt(i*i+j*j)/blur, (radius*2+1)*blur);\n\
+                    power += weight;\n\
+                    color += texture2D(mytexture, vec2(texel.x + i, texel.y + j)/size)*weight;\n\
+                }\n\
+            }\n\
+            gl_FragColor = color/power;//texture2D(mytexture, myTexCoord)*2-color/power;\n\
+        }\n");
+        
+        glUseProgram(sharpen->program);
+        checkerr(__LINE__);
+        glUniform1i(glGetUniformLocation(sharpen->program, "mytexture"), 0);
+        glUniform1i(glGetUniformLocation(sharpen->program, "myJincLookup"), 1);
         checkerr(__LINE__);
         
         // make framebuffer
@@ -453,6 +536,19 @@ struct renderer {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, FBOtexture2, 0);
         checkerr(__LINE__);
+        
+        // non-framebuffer texture
+        
+        unsigned int jinctexid;
+        glActiveTexture(GL_TEXTURE1);
+        glGenTextures(1, &jinctexid);
+        glBindTexture(GL_TEXTURE_2D, jinctexid);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 128, 1, 0, GL_RED, GL_FLOAT, jinctexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+        glActiveTexture(GL_TEXTURE0);
         
         checkerr(__LINE__);
     }
@@ -509,7 +605,7 @@ struct renderer {
         
         float projection[16] = {
             2.0f/w,  0.0f, 0.0f,-1.0f,
-            0.0f, -2.0f/h, 0.0f,1.0f,
+            0.0f, -2.0f/h, 0.0f, 1.0f,
             0.0f,    0.0f, 1.0f, 0.0f,
             0.0f,    0.0f, 0.0f, 1.0f
         };
@@ -758,11 +854,12 @@ int wmain (int argc, wchar_t **argv)
     
     int index = 0;
     
-    std::wstring directory = std::wstring(arg);
-    bool from_filename = false;
+    std::wstring directory(arg);
+    bool from_filename;
     if(looks_like_image_filename(directory))
     {
         directory = fs::path(arg).parent_path().wstring();
+        if(directory == L"") directory = L".";
         from_filename = true;
     }
     
@@ -779,7 +876,7 @@ int wmain (int argc, wchar_t **argv)
         {
             if(from_filename)
             {
-                if(p.path().compare(std::wstring(arg)) != 0)
+                if(p.path().filename() != std::wstring(arg))
                     index++;
                 else
                     from_filename = false;
