@@ -195,6 +195,8 @@ struct renderer {
     float jinctexture[128];
     float sinctexture[128];
     
+    bool downscaling = false;
+    
     GLFWwindow * win;
     postprogram * copy, * sharpen;
     renderer()
@@ -205,7 +207,7 @@ struct renderer {
         
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-        win = glfwCreateWindow(1104/2-2, 600, "Hello, World!", NULL, NULL);
+        win = glfwCreateWindow(1104*0.8, 600, "Hello, World!", NULL, NULL);
         
         if(!win) puts("glfw failed to init"), exit(0);
         glfwMakeContextCurrent(win);
@@ -216,10 +218,10 @@ struct renderer {
         {
             //jinctexture[i] = sin(float(i)*M_PI/4)*0.5+0.5;///(float(i)*M_PI/4)*0.5+0.5;
             if(i == 0) jinctexture[i] = 1.0;
-            else       jinctexture[i] = 2*std::cyl_bessel_j(1, float(i*M_PI)/4)/(float(i*M_PI)/4)*0.5+0.5;
+            else       jinctexture[i] = 2*std::cyl_bessel_j(1, float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
             
             if(i == 0) sinctexture[i] = 1.0;
-            else       sinctexture[i] = sin(float(i*M_PI))/(float(i*M_PI))*0.5+0.5;
+            else       sinctexture[i] = sin(float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
         }
         
         //glfwSwapBuffers(win);
@@ -267,6 +269,7 @@ struct renderer {
         "#version 330 core\n\
         uniform sampler2D mytexture;\n\
         uniform sampler2D myJincLookup;\n\
+        uniform sampler2D mySincLookup;\n\
         uniform vec2 mySize;\n\
         uniform vec2 myScale;\n\
         varying vec2 myTexCoord;\n\
@@ -328,12 +331,11 @@ struct renderer {
         }\n\
         float jinc(float x)\n\
         {\n\
-            return texture2D(myJincLookup, vec2(x*4/128, 0)).r*2-1;\n\
+            return texture2D(myJincLookup, vec2(x*8/128, 0)).r*2-1;\n\
         }\n\
         float sinc(float x)\n\
         {\n\
-            if(x == 0) return 1;\n\
-            else       return sin(x*M_PI)/(x*M_PI);\n\
+            return texture2D(mySincLookup, vec2(x*8/128, 0)).r*2-1;\n\
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
@@ -343,7 +345,7 @@ struct renderer {
         float sincwindow(float x, float radius)\n\
         {\n\
             if(x < -radius || x > radius) return 0;\n\
-            return sinc(x) * (cos(x*M_PI/4/radius)*0.5+0.5);\n\
+            return sinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         bool supersamplemode;\n\
         vec4 supersamplegrid()\n\
@@ -353,7 +355,7 @@ struct renderer {
             if(supersamplemode)\n\
                 radius = 8;\n\
             else\n\
-                radius = 2.5;\n\
+                radius = 2.0;\n\
             vec2 scale = myScale;\n\
             if(scale.x > 0 && scale.x < 0.25)\n\
             {\n\
@@ -394,7 +396,8 @@ struct renderer {
         {\n\
             if(myScale.x < 1 || myScale.y < 1)\n\
             {\n\
-                supersamplemode = !(myScale.x < 0.5 && myScale.y < 0.5);\n\
+                // disable sinc because apparently it's really bad and sharpening jinc in post makes up for its blurriness\n\
+                supersamplemode = true;//!(myScale.x < 0.5 && myScale.y < 0.5);\n\
                 gl_FragColor =  supersamplegrid();\n\
             }\n\
             else\n\
@@ -454,6 +457,7 @@ struct renderer {
         glUseProgram(program);
         glUniform1i(glGetUniformLocation(program, "mytexture"), 0);
         glUniform1i(glGetUniformLocation(program, "myJincLookup"), 1);
+        glUniform1i(glGetUniformLocation(program, "mySincLookup"), 2);
         
         checkerr(__LINE__);
         
@@ -482,20 +486,17 @@ struct renderer {
         "#version 330 core\n\
         uniform sampler2D mytexture;\n\
         uniform sampler2D myJincLookup;\n\
+        uniform float radius;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         float jinc(float x)\n\
         {\n\
-            return texture2D(myJincLookup, vec2(x*4/128, 0)).r*2-1;\n\
+            return texture2D(myJincLookup, vec2(x*8/128, 0)).r*2-1;\n\
         }\n\
-        float window(float x)\n\
+        float jincwindow(float x, float radius)\n\
         {\n\
-            if(x < -M_PI || x > M_PI) return 0;\n\
-            else return cos(x*M_PI);\n\
-        }\n\
-        float samplewindow(float x, float diameter)\n\
-        {\n\
-            return jinc(x) * window(x/diameter);\n\
+            if(x < -radius || x > radius) return 0;\n\
+            return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         void main()\n\
         {\n\
@@ -503,18 +504,18 @@ struct renderer {
             vec2 texel = myTexCoord*size;\n\
             vec4 color = vec4(0);\n\
             float power = 0;\n\
-            int radius = 4;\n\
             float blur = 1;\n\
-            for(int i = -radius; i <= radius; i++)\n\
+            for(int i = -int(floor(radius)); i <= int(ceil(radius)); i++)\n\
             {\n\
-                for(int j = -radius; j <= radius; j++)\n\
+                for(int j = -int(floor(radius)); j <= int(ceil(radius)); j++)\n\
                 {\n\
-                    float weight = samplewindow(sqrt(i*i+j*j)/blur, (radius*2+1)*blur);\n\
+                    float weight = jincwindow(sqrt(i*i+j*j)/blur, radius*blur);\n\
                     power += weight;\n\
                     color += texture2D(mytexture, vec2(texel.x + i, texel.y + j)/size)*weight;\n\
                 }\n\
             }\n\
-            gl_FragColor = color/power;//texture2D(mytexture, myTexCoord)*2-color/power;\n\
+            vec4 delta = texture2D(mytexture, myTexCoord)-color/power;\n\
+            gl_FragColor = texture2D(mytexture, myTexCoord) + 1*delta;\n\
         }\n");
         
         glUseProgram(sharpen->program);
@@ -559,6 +560,14 @@ struct renderer {
         glGenTextures(1, &jinctexid);
         glBindTexture(GL_TEXTURE_2D, jinctexid);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 128, 1, 0, GL_RED, GL_FLOAT, jinctexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+        glActiveTexture(GL_TEXTURE2);
+        glGenTextures(1, &jinctexid);
+        glBindTexture(GL_TEXTURE_2D, jinctexid);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 128, 1, 0, GL_RED, GL_FLOAT, sinctexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
@@ -680,9 +689,16 @@ struct renderer {
             }
         };
         
+        if(downscaling)
+        {
+            FLIP_SOURCE();
+            glUseProgram(sharpen->program);
+            glUniform1f(glGetUniformLocation(sharpen->program, "radius"), 1.0f);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        }
+        
         FLIP_SOURCE();
         BUFFER_DONE();
-        
         glUseProgram(copy->program);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         
@@ -1076,8 +1092,10 @@ int wmain (int argc, wchar_t **argv)
             if(x < upperlimit) x = upperlimit;
             if(x > lowerlimit) x = lowerlimit;
         }
+        
         myrenderer.draw_texture(myimage, -x, -y, 0.2, scale, scale);
         
+        myrenderer.downscaling = scale < 1;
         myrenderer.cycle_end();
         
         constexpr float throttle = 0.004;
