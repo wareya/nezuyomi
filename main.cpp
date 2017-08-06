@@ -53,6 +53,15 @@ void error_callback(int error, const char* description)
     puts(description);
 }
 
+bool usejinc = true;
+bool usedownscalesharpening = true;
+bool usesharpen = true;
+float sharpwet = 1;
+float sharpwet2 = 1;
+float sharpblur = 0.5;
+float sharpradius1 = 8.0;
+float sharpradius2 = 16.0;
+
 struct renderer {
     // TODO: FIXME: add a real reference counter
     struct texture {
@@ -192,13 +201,14 @@ struct renderer {
     unsigned int fshader;
     unsigned int program;
     
-    float jinctexture[128];
-    float sinctexture[128];
+    float jinctexture[512];
+    float sinctexture[512];
     
     bool downscaling = false;
+    float infoscale = 1.0;
     
     GLFWwindow * win;
-    postprogram * copy, * sharpen;
+    postprogram * copy, * sharpen, * nusharpen;
     renderer()
     {
         glfwSwapInterval(1);
@@ -214,7 +224,7 @@ struct renderer {
         
         if(gl3wInit()) puts("gl3w failed to init"), exit(0);
         
-        for(int i = 0; i < 128; i++)
+        for(int i = 0; i < 512; i++)
         {
             //jinctexture[i] = sin(float(i)*M_PI/4)*0.5+0.5;///(float(i)*M_PI/4)*0.5+0.5;
             if(i == 0) jinctexture[i] = 1.0;
@@ -272,6 +282,7 @@ struct renderer {
         uniform sampler2D mySincLookup;\n\
         uniform vec2 mySize;\n\
         uniform vec2 myScale;\n\
+        uniform int usejinc;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         //int lod;\n\
@@ -331,11 +342,11 @@ struct renderer {
         }\n\
         float jinc(float x)\n\
         {\n\
-            return texture2D(myJincLookup, vec2(x*8/128, 0)).r*2-1;\n\
+            return texture2D(myJincLookup, vec2(x*8/512, 0)).r*2-1;\n\
         }\n\
         float sinc(float x)\n\
         {\n\
-            return texture2D(mySincLookup, vec2(x*8/128, 0)).r*2-1;\n\
+            return texture2D(mySincLookup, vec2(x*8/512, 0)).r*2-1;\n\
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
@@ -397,7 +408,7 @@ struct renderer {
             if(myScale.x < 1 || myScale.y < 1)\n\
             {\n\
                 // disable sinc because apparently it's really bad and sharpening jinc in post makes up for its blurriness\n\
-                supersamplemode = true;//!(myScale.x < 0.5 && myScale.y < 0.5);\n\
+                supersamplemode = (usejinc != 0);//!(myScale.x < 0.5 && myScale.y < 0.5);\n\
                 gl_FragColor =  supersamplegrid();\n\
             }\n\
             else\n\
@@ -487,11 +498,13 @@ struct renderer {
         uniform sampler2D mytexture;\n\
         uniform sampler2D myJincLookup;\n\
         uniform float radius;\n\
+        uniform float blur;\n\
+        uniform float wetness;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         float jinc(float x)\n\
         {\n\
-            return texture2D(myJincLookup, vec2(x*8/128, 0)).r*2-1;\n\
+            return texture2D(myJincLookup, vec2(x*8/512, 0)).r*2-1;\n\
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
@@ -504,7 +517,6 @@ struct renderer {
             vec2 texel = myTexCoord*size;\n\
             vec4 color = vec4(0);\n\
             float power = 0;\n\
-            float blur = 1;\n\
             for(int i = -int(floor(radius)); i <= int(ceil(radius)); i++)\n\
             {\n\
                 for(int j = -int(floor(radius)); j <= int(ceil(radius)); j++)\n\
@@ -515,13 +527,86 @@ struct renderer {
                 }\n\
             }\n\
             vec4 delta = texture2D(mytexture, myTexCoord)-color/power;\n\
-            gl_FragColor = texture2D(mytexture, myTexCoord) + 1*delta;\n\
+            gl_FragColor = texture2D(mytexture, myTexCoord) + wetness*delta;\n\
         }\n");
         
         glUseProgram(sharpen->program);
         checkerr(__LINE__);
         glUniform1i(glGetUniformLocation(sharpen->program, "mytexture"), 0);
         glUniform1i(glGetUniformLocation(sharpen->program, "myJincLookup"), 1);
+        glUniform1i(glGetUniformLocation(sharpen->program, "wetness"), 1);
+        checkerr(__LINE__);
+        
+        nusharpen = new postprogram("nusharpen", 
+        "#version 330 core\n\
+        uniform sampler2D mytexture;\n\
+        uniform sampler2D myJincLookup;\n\
+        uniform float radius1;\n\
+        uniform float radius2;\n\
+        uniform float blur;\n\
+        uniform float frequency;\n\
+        uniform float wetness;\n\
+        varying vec2 myTexCoord;\n\
+        #define M_PI 3.1415926435\n\
+        float jinc(float x)\n\
+        {\n\
+            return texture2D(myJincLookup, vec2(x*8/512, 0)).r*2-1;\n\
+        }\n\
+        float jincwindow(float x, float radius)\n\
+        {\n\
+            if(x < -radius || x > radius) return 0;\n\
+            return jinc(x) * cos(x*M_PI/2/radius);\n\
+        }\n\
+        void main()\n\
+        {\n\
+            ivec2 size = textureSize(mytexture, 0);\n\
+            vec2 texel = myTexCoord*size;\n\
+            vec4 color1 = vec4(0);\n\
+            vec4 color2 = vec4(0);\n\
+            float realradius1 = radius1;\n\
+            float realradius2 = radius2;\n\
+            float coordscale = 1;\n\
+            if(frequency > 1.414)\n\
+                coordscale = frequency;\n\
+            else\n\
+            {\n\
+                realradius1 *= frequency;\n\
+                realradius2 *= frequency;\n\
+            }\n\
+            float power1 = 0;\n\
+            float power2 = 0;\n\
+            for(int i = -int(floor(realradius1)); i <= int(ceil(realradius1)); i++)\n\
+            {\n\
+                for(int j = -int(floor(realradius1)); j <= int(ceil(realradius1)); j++)\n\
+                {\n\
+                    float dist = sqrt(i*i+j*j)/blur;\n\
+                    if(dist/(realradius1) > 1) continue;\n\
+                    float weight1 = jincwindow(dist, realradius1*blur);\n\
+                    if(weight1 == 0) continue;\n\
+                    power1 += weight1;\n\
+                    color1 += texture2D(mytexture, vec2(texel.x + i*coordscale, texel.y + j*coordscale)/size)*weight1;\n\
+                }\n\
+            }\n\
+            for(int i = -int(floor(realradius2)); i <= int(ceil(realradius2)); i++)\n\
+            {\n\
+                for(int j = -int(floor(realradius2)); j <= int(ceil(realradius2)); j++)\n\
+                {\n\
+                    float dist = sqrt(i*i+j*j)/blur;\n\
+                    if(dist/(realradius2) > 1) continue;\n\
+                    float weight2 = jincwindow(dist, realradius2*blur);\n\
+                    power2 += weight2;\n\
+                    color2 += texture2D(mytexture, vec2(texel.x + i*coordscale, texel.y + j*coordscale)/size)*weight2;\n\
+                }\n\
+            }\n\
+            vec4 delta1 = texture2D(mytexture, myTexCoord)-color1/power1; // stuff below blur frequency\n\
+            vec4 delta2 = texture2D(mytexture, myTexCoord)-color2/power2; // lower radius\n\
+            gl_FragColor = texture2D(mytexture, myTexCoord) + wetness*delta1 - wetness*delta2;\n\
+        }\n");
+        
+        glUseProgram(nusharpen->program);
+        checkerr(__LINE__);
+        glUniform1i(glGetUniformLocation(nusharpen->program, "mytexture"), 0);
+        glUniform1i(glGetUniformLocation(nusharpen->program, "myJincLookup"), 1);
         checkerr(__LINE__);
         
         // make framebuffer
@@ -537,8 +622,8 @@ struct renderer {
         
         glBindTexture(GL_TEXTURE_2D, FBOtexture1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FBOtexture1, 0);
@@ -546,8 +631,8 @@ struct renderer {
         
         glBindTexture(GL_TEXTURE_2D, FBOtexture2);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, FBOtexture2, 0);
@@ -559,15 +644,16 @@ struct renderer {
         glActiveTexture(GL_TEXTURE1);
         glGenTextures(1, &jinctexid);
         glBindTexture(GL_TEXTURE_2D, jinctexid);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 128, 1, 0, GL_RED, GL_FLOAT, jinctexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 512, 1, 0, GL_RED, GL_FLOAT, jinctexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
         glActiveTexture(GL_TEXTURE2);
-        glGenTextures(1, &jinctexid);
-        glBindTexture(GL_TEXTURE_2D, jinctexid);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 128, 1, 0, GL_RED, GL_FLOAT, sinctexture);
+        unsigned int sinctexid;
+        glGenTextures(1, &sinctexid);
+        glBindTexture(GL_TEXTURE_2D, sinctexid);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, 512, 1, 0, GL_RED, GL_FLOAT, sinctexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
@@ -689,11 +775,25 @@ struct renderer {
             }
         };
         
-        if(downscaling)
+        if(downscaling && usedownscalesharpening)
         {
             FLIP_SOURCE();
             glUseProgram(sharpen->program);
-            glUniform1f(glGetUniformLocation(sharpen->program, "radius"), 1.0f);
+            glUniform1f(glGetUniformLocation(sharpen->program, "radius"), 8.0f);
+            glUniform1f(glGetUniformLocation(sharpen->program, "blur"), 1.0f);
+            glUniform1f(glGetUniformLocation(sharpen->program, "wetness"), 1.0f);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        }
+        
+        if(usesharpen)
+        {
+            FLIP_SOURCE();
+            glUseProgram(nusharpen->program);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "frequency"), infoscale);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "radius1"), sharpradius1);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "radius2"), sharpradius2);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "blur"), sharpblur);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "wetness"), sharpwet*sharpwet2);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
         
@@ -727,21 +827,12 @@ struct renderer {
         glUniformMatrix4fv(glGetUniformLocation(program, "translation"), 1, 0, translation);
         glUniform2f(glGetUniformLocation(program, "mySize"), w, h);
         glUniform2f(glGetUniformLocation(program, "myScale"), xscale, yscale);
+        glUniform1i(glGetUniformLocation(program, "usejinc"), usejinc);
         glBindTexture(GL_TEXTURE_2D, texture->texid);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
 };
-
-std::mutex scrollMutex;
-float scroll = 0;
-
-void myScrollEventCallback(GLFWwindow * win, double x, double y)
-{
-    scrollMutex.lock();
-        scroll += y;
-    scrollMutex.unlock();
-}
 
 std::wstring towstring(std::string mystring)
 {
@@ -865,6 +956,73 @@ std::string u16_to_u8(const wchar_t * text)
     return ret;
 }
 
+std::mutex scrollMutex;
+float scroll = 0;
+
+void myScrollEventCallback(GLFWwindow * win, double x, double y)
+{
+    scrollMutex.lock();
+        scroll += y;
+    scrollMutex.unlock();
+}
+
+void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
+{
+    if(action == GLFW_PRESS)
+    {
+        if(key == GLFW_KEY_P)
+        {
+            usejinc = !usejinc;
+            if(usejinc) puts("Jinc enabled");
+            else puts("Sinc enabled");
+        }
+        if(key == GLFW_KEY_I)
+        {
+            usedownscalesharpening = !usedownscalesharpening;
+            if(usedownscalesharpening) puts("Downscale postprocessing enabled");
+            else puts("Downscale postprocessing disabled");
+        }
+        if(key == GLFW_KEY_J)
+        {
+            sharpwet = 0.5;
+            puts("Edge enhancement strength set to 0.5");
+        }
+        if(key == GLFW_KEY_K)
+        {
+            sharpwet = 1.0;
+            puts("Edge enhancement strength set to 1");
+        }
+        if(key == GLFW_KEY_L)
+        {
+            sharpwet = 2.0;
+            puts("Edge enhancement strength set to 2");
+        }
+        if(key == GLFW_KEY_V)
+        {
+            usesharpen = false;
+            puts("Edge enhancement disabled");
+        }
+        if(key == GLFW_KEY_N)
+        {
+            usesharpen = true;
+            sharpradius1 = 4.0;
+            sharpradius2 = 5.0;
+            sharpblur = 1.0;
+            sharpwet2 = 4.0;
+            puts("Edge enhancement set to 'acuity' (for upscaling)");
+        }
+        if(key == GLFW_KEY_M)
+        {
+            usesharpen = true;
+            sharpradius1 = 4.0;
+            sharpradius2 = 8.0;
+            sharpblur = sqrt(0.5);
+            sharpwet2 = -1.5;
+            puts("Edge enhancement set to 'deartifact' (for downscaling)");
+        }
+    }
+}
+
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
 int wmain (int argc, wchar_t **argv)
 {
@@ -879,6 +1037,7 @@ int wmain (int argc, wchar_t **argv)
     
     auto & win = myrenderer.win;
     glfwSetScrollCallback(win, myScrollEventCallback);
+    glfwSetKeyCallback(win, myKeyEventCallback);
     glfwSetErrorCallback(error_callback);
     
     std::vector<std::wstring> mydir;
@@ -1096,6 +1255,7 @@ int wmain (int argc, wchar_t **argv)
         myrenderer.draw_texture(myimage, -x, -y, 0.2, scale, scale);
         
         myrenderer.downscaling = scale < 1;
+        myrenderer.infoscale = (scale>1)?(scale):(1);
         myrenderer.cycle_end();
         
         constexpr float throttle = 0.004;
