@@ -1090,6 +1090,8 @@ int wmain (int argc, wchar_t **argv)
     int index = 0;
     
     std::wstring directory(arg);
+    fs::path file(arg);
+    std::wstring filename = file.filename();
     bool from_filename;
     if(looks_like_image_filename(directory))
     {
@@ -1111,10 +1113,10 @@ int wmain (int argc, wchar_t **argv)
         {
             if(from_filename)
             {
-                if(p.path().filename() != std::wstring(arg))
-                    index++;
-                else
+                if(p.path().filename() == filename)
                     from_filename = false;
+                else
+                    index++;
             }
             mydir.push_back(path);
         }
