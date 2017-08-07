@@ -1110,8 +1110,26 @@ int wmain (int argc, wchar_t **argv)
     if(index == int(mydir.size())) index = 0;
     
     auto myimage = myrenderer.load_texture(mydir[index].data());
-    
     if(!myimage) return 0;
+    
+    // set default position
+    
+    constexpr bool reset_position_on_new_page = true;        
+    constexpr bool invert_x = true;
+    constexpr bool pgup_to_bottom = true;
+    
+    y = 0;
+    
+    if(!invert_x)
+        x = 0;
+    else
+    {
+        float xscale = float(myrenderer.w)/float(myimage->w);
+        float yscale = float(myrenderer.h)/float(myimage->h);
+        float scale = std::max(xscale, yscale);
+        x = myimage->w*scale - myrenderer.w;
+    }
+    
     
     float oldtime = glfwGetTime();
     while (!glfwWindowShouldClose(win))
@@ -1141,9 +1159,6 @@ int wmain (int argc, wchar_t **argv)
         int pgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
         int pgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
         
-        constexpr bool reset_position_on_new_page = true;        
-        constexpr bool invert_x = true;
-        constexpr bool pgup_to_bottom = true;
         
         if(pgUp and !lastPgUp and index > 0)
         {
@@ -1163,8 +1178,17 @@ int wmain (int argc, wchar_t **argv)
             }
             if(reset_position_on_new_page)
             {
-                y = 0;
-                bool invert_x_here = pgup_to_bottom ^ invert_x;
+                bool invert_x_here = pgup_to_bottom?!invert_x:invert_x;
+                bool invert_y_here = !pgup_to_bottom;
+                if(invert_y_here)
+                    y = 0;
+                else
+                {
+                    float xscale = float(myrenderer.w)/float(myimage->w);
+                    float yscale = float(myrenderer.h)/float(myimage->h);
+                    float scale = std::max(xscale, yscale);
+                    y = myimage->h*scale - myrenderer.h;
+                }
                 if(!invert_x_here)
                     x = 0;
                 else
