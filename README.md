@@ -1,16 +1,26 @@
 # nezuyomi
 Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
-Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. Nezuyomi is experimental.
+Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. **Nezuyomi is experimental.**
 
-Downscaling uses jinc at minor downscaling factors, and sinc at major downscaling factors.
+## usage
 
-This is because jinc is much better than sinc at downscaling images in the 0.5x to 1.0x scale range in pretty much every way, but is blurrier than sinc (by necessity).
+Drag-drop an image or folder onto the executable, or invoke it on the command line with a single parameter of a folder or image. Nezuyomi will iterate over every png or jpg file in the given directory, or the same directory as the given image, and store their filenames. If images are added or deleted during operation, this won't be noticed. This will change once mingw-w64 adds first class C++17 filesystem support, right now the filesystem code is hacked together because it's still on an experimental implementation.
 
-Sinc keeps text sharper and has a reasonable quality, and using sinc with images basically requires using a small kernel window or you get terrible ringing, so it's also much faster.
+## controls
 
-This comes at the expense of there being slightly more aliasing noise in images with loud signal data around half of nyquist frequency in both axis's frequency bands. (Jinc is anisotropic, which is why it doesn't have this noise, but is also why it's blurrier.)
+p: Switch between jinc and sinc downscaling. Jinc by default. Jinc reduces noise from dithering much better than sinc, but in theory, can reproduce text worse. Sinc uses half the radius of jinc and is therefore faster. (Upscaling uses hermite cubic splines and cannot be changed.)
 
-Upscaling uses hermite cubic spline interpolation.
+o: Toggle low quality downscaling. Cuts the gathering radius in half. Can make specific details blurrier or sharper depending on their shape and whether jinc or sinc is being used. High quality by default.
 
-Nezuyomi has a jinc-based sharpening shader which is disabled by default. This is useful when text is blurrier than it should be because of crappy scan filtering.
+i: Toggle downscale post sharpening. Only applies to jinc. A very weak "unsharp mask" style sharpening filter. Off by default.
+
+v: Disable edge enhancement. Edge enhancement is disabled by default.
+
+n: Enable "acuity" edge enhancement. Like a local low frequency boost. For upscaling.
+
+m: Enable "deartefact" edge enhancement. Boosts some frequencies, lowers others. Has the subjective effect of "enhancing" non-axial features in very low resolution text, hence the name.
+
+j, k, l: Edge enhancement strength settings: 50%, 100%, 200%.
+
+pgup, pgdown: Change page. Works even if nezuyomi was invoked with a single image. Images are sorted in whatever order the OS feeds them to nezuyomi when it iterates over them; the C++ standard says this is technically unspecified.
