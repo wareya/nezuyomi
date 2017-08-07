@@ -53,6 +53,7 @@ void error_callback(int error, const char* description)
     puts(description);
 }
 
+float downscaleradius = 8.0;
 bool usejinc = true;
 bool usedownscalesharpening = true;
 bool usesharpen = false;
@@ -288,6 +289,7 @@ struct renderer {
         uniform vec2 mySize;\n\
         uniform vec2 myScale;\n\
         uniform int usejinc;\n\
+        uniform float myradius;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         //int lod;\n\
@@ -368,10 +370,7 @@ struct renderer {
         {\n\
             int lod = 0;\n\
             float radius;\n\
-            if(supersamplemode)\n\
-                radius = 8;\n\
-            else\n\
-                radius = 2.0;\n\
+            radius = myradius;\n\
             vec2 scale = myScale;\n\
             if(scale.x > 0 && scale.x < 0.25)\n\
             {\n\
@@ -396,6 +395,7 @@ struct renderer {
                 {\n\
                     float x = (i-ix)*scale.x;\n\
                     float y = (j-iy)*scale.y;\n\
+                    if(supersamplemode && sqrt(x*x+y*y) > radius) continue;\n\
                     float weight;\n\
                     if(supersamplemode)\n\
                         weight = jincwindow(sqrt(x*x+y*y), radius);\n\
@@ -412,8 +412,7 @@ struct renderer {
         {\n\
             if(myScale.x < 1 || myScale.y < 1)\n\
             {\n\
-                // disable sinc because apparently it's really bad and sharpening jinc in post makes up for its blurriness\n\
-                supersamplemode = (usejinc != 0);//!(myScale.x < 0.5 && myScale.y < 0.5);\n\
+                supersamplemode = (usejinc != 0);\n\
                 gl_FragColor =  supersamplegrid();\n\
             }\n\
             else\n\
@@ -780,11 +779,11 @@ struct renderer {
             }
         };
         
-        if(downscaling && usedownscalesharpening)
+        if(downscaling && usedownscalesharpening && usejinc)
         {
             FLIP_SOURCE();
             glUseProgram(sharpen->program);
-            glUniform1f(glGetUniformLocation(sharpen->program, "radius"), 8.0f);
+            glUniform1f(glGetUniformLocation(sharpen->program, "radius"), downscaleradius);
             glUniform1f(glGetUniformLocation(sharpen->program, "blur"), 1.0f);
             glUniform1f(glGetUniformLocation(sharpen->program, "wetness"), 1.0f);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -833,9 +832,11 @@ struct renderer {
         glUniform2f(glGetUniformLocation(program, "mySize"), w, h);
         glUniform2f(glGetUniformLocation(program, "myScale"), xscale, yscale);
         glUniform1i(glGetUniformLocation(program, "usejinc"), usejinc);
+        glUniform1f(glGetUniformLocation(program, "myradius"), downscaleradius);
         glBindTexture(GL_TEXTURE_2D, texture->texid);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        checkerr(__LINE__);
     }
 };
 
@@ -971,15 +972,42 @@ void myScrollEventCallback(GLFWwindow * win, double x, double y)
     scrollMutex.unlock();
 }
 
+bool light_downscaling = false;
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
     if(action == GLFW_PRESS)
     {
+        if(key == GLFW_KEY_O)
+        {
+            light_downscaling = !light_downscaling;
+            if(light_downscaling)
+            {
+                puts("Switched to faster downscaling");
+                if(usejinc) downscaleradius = 4.0;
+                else        downscaleradius = 2.0;
+            }
+            else
+            {
+                puts("Switched to slower downscaling");
+                if(usejinc) downscaleradius = 6.0;
+                else        downscaleradius = 4.0;
+            }
+        }
         if(key == GLFW_KEY_P)
         {
             usejinc = !usejinc;
-            if(usejinc) puts("Jinc enabled");
-            else puts("Sinc enabled");
+            if(usejinc)
+            {
+                if(light_downscaling) downscaleradius = 4.0;
+                else                  downscaleradius = 6.0;
+                puts("Jinc enabled");
+            }
+            else
+            {
+                if(light_downscaling) downscaleradius = 2.0;
+                else                  downscaleradius = 4.0;
+                puts("Sinc enabled");
+            }
         }
         if(key == GLFW_KEY_I)
         {
@@ -1115,6 +1143,7 @@ int wmain (int argc, wchar_t **argv)
         
         constexpr bool reset_position_on_new_page = true;        
         constexpr bool invert_x = true;
+        constexpr bool pgup_to_bottom = true;
         
         if(pgUp and !lastPgUp and index > 0)
         {
@@ -1135,7 +1164,8 @@ int wmain (int argc, wchar_t **argv)
             if(reset_position_on_new_page)
             {
                 y = 0;
-                if(!invert_x)
+                bool invert_x_here = pgup_to_bottom ^ invert_x;
+                if(!invert_x_here)
                     x = 0;
                 else
                 {
@@ -1149,13 +1179,13 @@ int wmain (int argc, wchar_t **argv)
         }
         if(pgDn and !lastPgDn and index < int(mydir.size()-1))
         {
-            puts("entering B");
+            //puts("entering B");
             repeat2:
             index = std::min(index+1, int(mydir.size()-1));
             myimage = myrenderer.load_texture(mydir[index].data());
             if(!myimage and index < int(mydir.size()-1))
             {
-                puts("looping B");
+                //puts("looping B");
                 goto repeat2;
             }
             else if(!myimage)
