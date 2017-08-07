@@ -55,7 +55,7 @@ void error_callback(int error, const char* description)
 
 bool usejinc = true;
 bool usedownscalesharpening = true;
-bool usesharpen = true;
+bool usesharpen = false;
 float sharpwet = 1;
 float sharpwet2 = 1;
 float sharpblur = 0.5;
@@ -85,6 +85,7 @@ struct renderer {
             
             checkerr(__LINE__);
             puts("Generating mipmaps");
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
             glGenerateMipmap(GL_TEXTURE_2D);
             puts("Done generating mipmaps");
             checkerr(__LINE__);
@@ -98,7 +99,7 @@ struct renderer {
     texture * lastTexture = nullptr;
     texture * load_texture(const wchar_t * filename)
     {
-        
+        auto start = glfwGetTime();
         puts("Starting load texture");
         _putws(filename);
         fflush(stdout);
@@ -119,6 +120,8 @@ struct renderer {
             lastTexture = tex;
             puts("Built texture");
             stbi_image_free(data);
+            auto end = glfwGetTime();
+            printf("Time: %f\n", end-start);
             return tex;
         }
     }
@@ -245,6 +248,8 @@ struct renderer {
         
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
@@ -979,8 +984,8 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         if(key == GLFW_KEY_I)
         {
             usedownscalesharpening = !usedownscalesharpening;
-            if(usedownscalesharpening) puts("Downscale postprocessing enabled");
-            else puts("Downscale postprocessing disabled");
+            if(usedownscalesharpening) puts("Downscale sharpening enabled");
+            else puts("Downscale sharpening disabled");
         }
         if(key == GLFW_KEY_J)
         {
