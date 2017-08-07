@@ -58,8 +58,10 @@ bool usejinc = true;
 bool usedownscalesharpening = true;
 bool usesharpen = false;
 float sharpwet = 1;
-float sharpwet2 = 1;
-float sharpblur = 0.5;
+float sharphardness1 = 1;
+float sharphardness2 = 1;
+float sharpblur1 = 0.5;
+float sharpblur2 = 0.5;
 float sharpradius1 = 8.0;
 float sharpradius2 = 16.0;
 
@@ -547,9 +549,12 @@ struct renderer {
         uniform sampler2D myJincLookup;\n\
         uniform float radius1;\n\
         uniform float radius2;\n\
-        uniform float blur;\n\
+        uniform float blur1;\n\
+        uniform float blur2;\n\
         uniform float frequency;\n\
         uniform float wetness;\n\
+        uniform float hardness1;\n\
+        uniform float hardness2;\n\
         varying vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         float jinc(float x)\n\
@@ -583,9 +588,9 @@ struct renderer {
             {\n\
                 for(int j = -int(floor(realradius1)); j <= int(ceil(realradius1)); j++)\n\
                 {\n\
-                    float dist = sqrt(i*i+j*j)/blur;\n\
+                    float dist = sqrt(i*i+j*j)/blur1;\n\
                     if(dist/(realradius1) > 1) continue;\n\
-                    float weight1 = jincwindow(dist, realradius1*blur);\n\
+                    float weight1 = jincwindow(dist, realradius1*blur1);\n\
                     if(weight1 == 0) continue;\n\
                     power1 += weight1;\n\
                     color1 += texture2D(mytexture, vec2(texel.x + i*coordscale, texel.y + j*coordscale)/size)*weight1;\n\
@@ -595,16 +600,16 @@ struct renderer {
             {\n\
                 for(int j = -int(floor(realradius2)); j <= int(ceil(realradius2)); j++)\n\
                 {\n\
-                    float dist = sqrt(i*i+j*j)/blur;\n\
+                    float dist = sqrt(i*i+j*j)/blur2;\n\
                     if(dist/(realradius2) > 1) continue;\n\
-                    float weight2 = jincwindow(dist, realradius2*blur);\n\
+                    float weight2 = jincwindow(dist, realradius2*blur2);\n\
                     power2 += weight2;\n\
                     color2 += texture2D(mytexture, vec2(texel.x + i*coordscale, texel.y + j*coordscale)/size)*weight2;\n\
                 }\n\
             }\n\
             vec4 delta1 = texture2D(mytexture, myTexCoord)-color1/power1; // stuff below blur frequency\n\
             vec4 delta2 = texture2D(mytexture, myTexCoord)-color2/power2; // lower radius\n\
-            gl_FragColor = texture2D(mytexture, myTexCoord) + wetness*delta1 - wetness*delta2;\n\
+            gl_FragColor = texture2D(mytexture, myTexCoord) + hardness1*wetness*delta1 + hardness2*wetness*delta2;\n\
         }\n");
         
         glUseProgram(nusharpen->program);
@@ -796,8 +801,11 @@ struct renderer {
             glUniform1f(glGetUniformLocation(nusharpen->program, "frequency"), infoscale);
             glUniform1f(glGetUniformLocation(nusharpen->program, "radius1"), sharpradius1);
             glUniform1f(glGetUniformLocation(nusharpen->program, "radius2"), sharpradius2);
-            glUniform1f(glGetUniformLocation(nusharpen->program, "blur"), sharpblur);
-            glUniform1f(glGetUniformLocation(nusharpen->program, "wetness"), sharpwet*sharpwet2);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "blur1"), sharpblur1);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "blur2"), sharpblur2);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "hardness1"), sharphardness1);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "hardness2"), sharphardness2);
+            glUniform1f(glGetUniformLocation(nusharpen->program, "wetness"), sharpwet);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
         
@@ -1038,10 +1046,12 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         if(key == GLFW_KEY_N)
         {
             usesharpen = true;
-            sharpradius1 = 4.0;
-            sharpradius2 = 5.0;
-            sharpblur = 1.0;
-            sharpwet2 = 4.0;
+            sharpradius1 = 2.0;
+            sharpradius2 = 6.0;
+            sharpblur1 = 0.5;
+            sharpblur2 = 6.0;
+            sharphardness1 = -0.5;
+            sharphardness2 = +0.25;
             puts("Edge enhancement set to 'acuity' (for upscaling)");
         }
         if(key == GLFW_KEY_M)
@@ -1049,8 +1059,10 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             usesharpen = true;
             sharpradius1 = 4.0;
             sharpradius2 = 8.0;
-            sharpblur = sqrt(0.5);
-            sharpwet2 = -1.5;
+            sharpblur1 = sqrt(0.5);
+            sharpblur2 = sqrt(0.5);
+            sharphardness1 = -1.5;
+            sharphardness2 = +1.5;
             puts("Edge enhancement set to 'deartifact' (for downscaling)");
         }
     }
