@@ -71,7 +71,7 @@ struct renderer {
         {
             this->w = w;
             this->h = h;
-            this->n = 3;
+            this->n = 4;
             
             checkerr(__LINE__);
             glActiveTexture(GL_TEXTURE0);
