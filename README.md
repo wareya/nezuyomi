@@ -24,3 +24,7 @@ m: Enable "deartefact" edge enhancement. Boosts some frequencies, lowers others.
 j, k, l: Edge enhancement strength settings: 50%, 100%, 200%.
 
 pgup, pgdown: Change page. Works even if nezuyomi was invoked with a single image. Images are sorted in whatever order the OS feeds them to nezuyomi when it iterates over them; the C++ standard says this is technically unspecified.
+
+s: Toggle scaling mode: fill -> fit -> 1:1 -> loop. Default: fill.
+
+d: Toggle reading direction. Default: right-to-left.

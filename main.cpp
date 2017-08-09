@@ -53,7 +53,7 @@ void error_callback(int error, const char* description)
     puts(description);
 }
 
-float downscaleradius = 8.0;
+float downscaleradius = 6.0;
 bool usejinc = true;
 bool usedownscalesharpening = true;
 bool usesharpen = false;
@@ -64,6 +64,7 @@ float sharpblur1 = 0.5;
 float sharpblur2 = 0.5;
 float sharpradius1 = 8.0;
 float sharpradius2 = 16.0;
+int scalemode = 1;
 
 struct renderer {
     // TODO: FIXME: add a real reference counter
@@ -981,6 +982,10 @@ void myScrollEventCallback(GLFWwindow * win, double x, double y)
 }
 
 bool light_downscaling = false;
+bool reset_position_on_new_page = true;        
+bool invert_x = true;
+bool pgup_to_bottom = true;
+
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
     if(action == GLFW_PRESS)
@@ -1065,7 +1070,94 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             sharphardness2 = +1.5;
             puts("Edge enhancement set to 'deartifact' (for downscaling)");
         }
+        if(key == GLFW_KEY_S)
+        {
+            scalemode = (scalemode+1)%3;
+            if(scalemode == 0) puts("Scaling disabled");
+            if(scalemode == 1) puts("Scaling set to 'fill'");
+            if(scalemode == 2) puts("Scaling set to 'fit'");
+        }
+        if(key == GLFW_KEY_D)
+        {
+            reset_position_on_new_page = !reset_position_on_new_page;
+            if(reset_position_on_new_page) puts("Position will now be reset on page change");
+            else puts("Position no longer reset on page change");
+        }
+        if(key == GLFW_KEY_F)
+        {
+            invert_x = !invert_x;
+            if(invert_x) puts("Switched to manga (right to left) mode");
+            else puts("Switched to western (left to right) mode");
+        }
+        
     }
+}
+
+void getscale(int viewport_w, int viewport_h, int image_w, int image_h, float & xscale, float & yscale, float & scale)
+{
+    xscale = float(viewport_w)/float(image_w);
+    yscale = float(viewport_h)/float(image_h);
+    if(scalemode == 0)
+        scale = 1;
+    else if(scalemode == 1)
+        scale = std::max(xscale, yscale);
+    else if(scalemode == 2)
+        scale = std::min(xscale, yscale);
+}
+
+void reset_position(int viewport_w, int viewport_h, int image_w, int image_h, float xscale, float yscale, float scale, float & x, float & y, bool forwards = true)
+{
+    bool invert_x_here = forwards?!invert_x:invert_x;
+    bool invert_y_here = forwards;
+    if(scale < yscale)
+        y = (image_h*scale - viewport_h)/2;
+    else if(invert_y_here)
+        y = 0;
+    else
+        y = image_h*scale - viewport_h;
+    if(scale < xscale)
+        x = (image_w*scale - viewport_w)/2;
+    else if(invert_x_here)
+        x = 0;
+    else
+        x = image_w*scale - viewport_w;
+}
+
+void limit_position(int viewport_w, int viewport_h, int image_w, int image_h, float xscale, float yscale, float scale, float & x, float & y)
+{
+    if(scale < yscale)
+    {
+        float upperlimit = image_h*scale - viewport_h;
+        float lowerlimit = 0;
+        if(y < upperlimit) y = upperlimit;
+        if(y > lowerlimit) y = lowerlimit;
+    }
+    else if(scale > yscale)
+    {
+        float upperlimit = 0;
+        float lowerlimit = image_h*scale - viewport_h;
+        if(y < upperlimit) y = upperlimit;
+        if(y > lowerlimit) y = lowerlimit;
+    }
+    else
+        y = 0;
+    
+    if(scale < xscale)
+    {
+        float upperlimit = image_w*scale - viewport_w;
+        float lowerlimit = 0;
+        if(x < upperlimit) x = upperlimit;
+        if(x > lowerlimit) x = lowerlimit;
+    }
+    else if(scale > xscale)
+    {
+        float upperlimit = 0;
+        float lowerlimit = image_w*scale - viewport_w;
+        if(x < upperlimit) x = upperlimit;
+        if(x > lowerlimit) x = lowerlimit;
+    }
+    else
+        x = 0;
 }
 
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
@@ -1128,22 +1220,9 @@ int wmain (int argc, wchar_t **argv)
     
     // set default position
     
-    constexpr bool reset_position_on_new_page = true;        
-    constexpr bool invert_x = true;
-    constexpr bool pgup_to_bottom = true;
-    
-    y = 0;
-    
-    if(!invert_x)
-        x = 0;
-    else
-    {
-        float xscale = float(myrenderer.w)/float(myimage->w);
-        float yscale = float(myrenderer.h)/float(myimage->h);
-        float scale = std::max(xscale, yscale);
-        x = myimage->w*scale - myrenderer.w;
-    }
-    
+    float xscale, yscale, scale; // "scale" is actually used to scale the image. xscale and yscale are for logic.
+    getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
+    reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
     
     float oldtime = glfwGetTime();
     while (!glfwWindowShouldClose(win))
@@ -1167,12 +1246,28 @@ int wmain (int argc, wchar_t **argv)
         
         oldtime = newtime;
         
+        getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
+        
+        static float lastscale = scale;
+        if(scale != lastscale)
+        {
+            if(scalemode == 2)
+                reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
+            else
+            {
+                x /= lastscale;
+                x *= scale;
+                y /= lastscale;
+                y *= scale;
+            }
+        }
+        lastscale = scale;
+        
         static int lastPgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
         static int lastPgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
         
         int pgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
         int pgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
-        
         
         if(pgUp and !lastPgUp and index > 0)
         {
@@ -1192,28 +1287,8 @@ int wmain (int argc, wchar_t **argv)
             }
             if(reset_position_on_new_page)
             {
-                bool invert_x_here = pgup_to_bottom?!invert_x:invert_x;
-                bool invert_y_here = !pgup_to_bottom;
-                if(invert_y_here)
-                    y = 0;
-                else
-                {
-                    float xscale = float(myrenderer.w)/float(myimage->w);
-                    float yscale = float(myrenderer.h)/float(myimage->h);
-                    float scale = std::max(xscale, yscale);
-                    y = myimage->h*scale - myrenderer.h;
-                }
-                if(!invert_x_here)
-                    x = 0;
-                else
-                {
-                    float xscale = float(myrenderer.w)/float(myimage->w);
-                    float yscale = float(myrenderer.h)/float(myimage->h);
-                    float scale = std::max(xscale, yscale);
-                    x = myimage->w*scale - myrenderer.w;
-                }
+                reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y, !pgup_to_bottom);
             }
-                
         }
         if(pgDn and !lastPgDn and index < int(mydir.size()-1))
         {
@@ -1233,16 +1308,7 @@ int wmain (int argc, wchar_t **argv)
             }
             if(reset_position_on_new_page)
             {
-                y = 0;
-                if(!invert_x)
-                    x = 0;
-                else
-                {
-                    float xscale = float(myrenderer.w)/float(myimage->w);
-                    float yscale = float(myrenderer.h)/float(myimage->h);
-                    float scale = std::max(xscale, yscale);
-                    x = myimage->w*scale - myrenderer.w;
-                }
+                reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
             }
         }
         
@@ -1252,26 +1318,12 @@ int wmain (int argc, wchar_t **argv)
         const float speed = 2000;
         const float scrollspeed = 100;
         
-        float xscale = float(myrenderer.w)/float(myimage->w);
-        float yscale = float(myrenderer.h)/float(myimage->h);
-        float scale = std::max(xscale, yscale);
-        static float lastscale = scale;
-        
         float motionscale;
         if(xscale > yscale)
             motionscale = myrenderer.w/1000.0;
         else
             motionscale = myrenderer.h/1000.0;
         
-        if(scale != lastscale)
-        {
-            x /= lastscale;
-            x *= scale;
-            y /= lastscale;
-            y *= scale;
-        }
-        
-        lastscale = scale;
         
         washolding = false;
         if(glfwGetKey(win, GLFW_KEY_UP))
@@ -1305,25 +1357,7 @@ int wmain (int argc, wchar_t **argv)
         
         myrenderer.cycle_start();
         
-        if(xscale > yscale)
-        {
-            if(!invert_x)
-                x = 0;
-            else
-                x = myimage->w*scale - myrenderer.w;
-            float upperlimit = 0;
-            float lowerlimit = myimage->h*scale - myrenderer.h;
-            if(y < upperlimit) y = upperlimit;
-            if(y > lowerlimit) y = lowerlimit;
-        }
-        else
-        {
-            y = 0;
-            float upperlimit = 0;
-            float lowerlimit = myimage->w*scale - myrenderer.w;
-            if(x < upperlimit) x = upperlimit;
-            if(x > lowerlimit) x = lowerlimit;
-        }
+        limit_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
         
         myrenderer.draw_texture(myimage, -x, -y, 0.2, scale, scale);
         
