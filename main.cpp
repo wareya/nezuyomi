@@ -142,7 +142,7 @@ struct renderer {
             "#version 330 core\n\
             layout (location = 0) in vec3 aPos;\n\
             layout (location = 1) in vec2 aTex;\n\
-            varying out vec2 myTexCoord;\n\
+            out vec2 myTexCoord;\n\
             void main()\n\
             {\n\
                 gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n\
@@ -276,7 +276,7 @@ struct renderer {
         uniform mat4 translation;\n\
         layout (location = 0) in vec3 aPos;\n\
         layout (location = 1) in vec2 aTex;\n\
-        varying out vec2 myTexCoord;\n\
+        out vec2 myTexCoord;\n\
         void main()\n\
         {\n\
             gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0) * translation * projection;\n\
@@ -293,7 +293,7 @@ struct renderer {
         uniform vec2 myScale;\n\
         uniform int usejinc;\n\
         uniform float myradius;\n\
-        varying vec2 myTexCoord;\n\
+        in vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         //int lod;\n\
         vec2 offsetRoundedCoord(int a, int b)\n\
@@ -411,18 +411,19 @@ struct renderer {
             c /= sampleWeight;\n\
             return c;\n\
         }\n\
+        layout(location = 0) out vec4 fragColor;\n\
         void main()\n\
         {\n\
             if(myScale.x < 1 || myScale.y < 1)\n\
             {\n\
                 supersamplemode = (usejinc != 0);\n\
-                gl_FragColor =  supersamplegrid();\n\
+                fragColor =  supersamplegrid();\n\
             }\n\
             else\n\
             {\n\
                 vec2 phase = interpolationPhase();\n\
                 vec4 c = hermitegrid(phase.x, phase.y);\n\
-                gl_FragColor = c;\n\
+                fragColor = c;\n\
             }\n\
         }\n"
         ;
@@ -489,10 +490,11 @@ struct renderer {
         copy = new postprogram("copy", 
         "#version 330 core\n\
         uniform sampler2D mytexture;\n\
-        varying vec2 myTexCoord;\n\
+        in vec2 myTexCoord;\n\
+        layout(location = 0) out vec4 fragColor;\n\
         void main()\n\
         {\n\
-            gl_FragColor = texture2D(mytexture, myTexCoord);\n\
+            fragColor = texture2D(mytexture, myTexCoord);\n\
         }\n");
         
         glUseProgram(copy->program);
@@ -507,7 +509,7 @@ struct renderer {
         uniform float radius;\n\
         uniform float blur;\n\
         uniform float wetness;\n\
-        varying vec2 myTexCoord;\n\
+        in vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         float jinc(float x)\n\
         {\n\
@@ -518,6 +520,7 @@ struct renderer {
             if(x < -radius || x > radius) return 0;\n\
             return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
+        layout(location = 0) out vec4 fragColor;\n\
         void main()\n\
         {\n\
             ivec2 size = textureSize(mytexture, 0);\n\
@@ -534,7 +537,7 @@ struct renderer {
                 }\n\
             }\n\
             vec4 delta = texture2D(mytexture, myTexCoord)-color/power;\n\
-            gl_FragColor = texture2D(mytexture, myTexCoord) + wetness*delta;\n\
+            fragColor = texture2D(mytexture, myTexCoord) + wetness*delta;\n\
         }\n");
         
         glUseProgram(sharpen->program);
@@ -556,7 +559,7 @@ struct renderer {
         uniform float wetness;\n\
         uniform float hardness1;\n\
         uniform float hardness2;\n\
-        varying vec2 myTexCoord;\n\
+        in vec2 myTexCoord;\n\
         #define M_PI 3.1415926435\n\
         float jinc(float x)\n\
         {\n\
@@ -567,6 +570,7 @@ struct renderer {
             if(x < -radius || x > radius) return 0;\n\
             return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
+        layout(location = 0) out vec4 fragColor;\n\
         void main()\n\
         {\n\
             ivec2 size = textureSize(mytexture, 0);\n\
@@ -610,7 +614,7 @@ struct renderer {
             }\n\
             vec4 delta1 = texture2D(mytexture, myTexCoord)-color1/power1; // stuff below blur frequency\n\
             vec4 delta2 = texture2D(mytexture, myTexCoord)-color2/power2; // lower radius\n\
-            gl_FragColor = texture2D(mytexture, myTexCoord) + hardness1*wetness*delta1 + hardness2*wetness*delta2;\n\
+            fragColor = texture2D(mytexture, myTexCoord) + hardness1*wetness*delta1 + hardness2*wetness*delta2;\n\
         }\n");
         
         glUseProgram(nusharpen->program);
@@ -1072,7 +1076,10 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         }
         if(key == GLFW_KEY_S)
         {
-            scalemode = (scalemode+1)%3;
+            if(!mods&GLFW_MOD_SHIFT)
+                scalemode = (scalemode+1)%3;
+            else
+                scalemode = (scalemode+3-1)%3;
             if(scalemode == 0) puts("Scaling disabled");
             if(scalemode == 1) puts("Scaling set to 'fill'");
             if(scalemode == 2) puts("Scaling set to 'fit'");
@@ -1121,6 +1128,14 @@ void reset_position(int viewport_w, int viewport_h, int image_w, int image_h, fl
         x = 0;
     else
         x = image_w*scale - viewport_w;
+}
+void reset_position_partial(int viewport_w, int viewport_h, int image_w, int image_h, float xscale, float yscale, float scale, float & x, float & y)
+{
+    if(scale < yscale)
+        y = (image_h*scale - viewport_h)/2;
+    
+    if(scale < xscale)
+        x = (image_w*scale - viewport_w)/2;
 }
 
 void limit_position(int viewport_w, int viewport_h, int image_w, int image_h, float xscale, float yscale, float scale, float & x, float & y)
@@ -1259,6 +1274,7 @@ int wmain (int argc, wchar_t **argv)
                 x *= scale;
                 y /= lastscale;
                 y *= scale;
+                reset_position_partial(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
             }
         }
         lastscale = scale;
