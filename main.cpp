@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <stdio.h>
 #include <math.h>
+#include <locale.h>
 #ifndef M_PI
 #define M_PI 3.1415926435
 #endif
@@ -31,9 +32,11 @@ namespace fs = std::experimental::filesystem;
 #include <thread>
 #include <chrono>
 #include <vector>
+#include <map>
 #include <string>
 
 #include <iostream>
+#include <fstream>
 
 struct vertex {
     float x, y, z, u, v;
@@ -53,18 +56,93 @@ void error_callback(int error, const char* description)
     puts(description);
 }
 
+struct value {
+    double real = 0;
+    std::string text = "";
+    bool isnum = true;
+};
+
+std::map<std::string, value> config;
+
+struct conf_real {
+    std::string name;
+    conf_real(std::string arg_name, double real)
+    {
+        name = arg_name;
+        *this = real;
+    }
+    double operator =(double real)
+    {
+        config[name] = {real, "", true};
+        return real;
+    }
+    operator double()
+    {
+        return config[name].real;
+    }
+};
+
+bool is_number(const std::string & string)
+{
+    try {stod(string);}
+    catch(const std::invalid_argument & e){ return false; }
+    catch(const std::out_of_range & e){ return false; }
+    return true;
+}
+
+double double_from_string(const std::string & string)
+{
+    double real = 0;
+    try {real = stod(string);}
+    catch(const std::invalid_argument & e){}
+    catch(const std::out_of_range & e){}
+    return real;
+}
+
+struct conf_text {
+    std::string name;
+    conf_text(std::string arg_name, std::string text)
+    {
+        name = arg_name;
+        *this = text;
+    }
+    std::string operator =(std::string text)
+    {
+        config[name] = {double_from_string(text), text, false};
+        return text;
+    }
+    operator std::string()
+    {
+        return config[name].text;
+    }
+};
+
+#define MAKEREAL(X, Y) conf_real X(#X, Y)
+
+MAKEREAL(scalemode, 1);
+MAKEREAL(usejinc, 1);
+MAKEREAL(usedownscalesharpening, 1);
+MAKEREAL(usesharpen, 0);
+MAKEREAL(sharpwet, 1);
+MAKEREAL(light_downscaling, 0);
+MAKEREAL(reset_position_on_new_page, 1);
+MAKEREAL(invert_x, 1);
+MAKEREAL(pgup_to_bottom, 1);
+MAKEREAL(speed, 2000);
+MAKEREAL(scrollspeed, 100);
+MAKEREAL(throttle, 0.004);
+
+#define MAKETEXT(X, Y) conf_text X(#X, Y)
+
+MAKETEXT(sharpenmode, "acuity");
+
 float downscaleradius = 6.0;
-bool usejinc = true;
-bool usedownscalesharpening = true;
-bool usesharpen = false;
-float sharpwet = 1;
 float sharphardness1 = 1;
 float sharphardness2 = 1;
 float sharpblur1 = 0.5;
 float sharpblur2 = 0.5;
 float sharpradius1 = 8.0;
 float sharpradius2 = 16.0;
-int scalemode = 1;
 
 struct renderer {
     // TODO: FIXME: add a real reference counter
@@ -985,11 +1063,6 @@ void myScrollEventCallback(GLFWwindow * win, double x, double y)
     scrollMutex.unlock();
 }
 
-bool light_downscaling = false;
-bool reset_position_on_new_page = true;        
-bool invert_x = true;
-bool pgup_to_bottom = true;
-
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
     if(action == GLFW_PRESS)
@@ -1000,29 +1073,38 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             if(light_downscaling)
             {
                 puts("Switched to faster downscaling");
-                if(usejinc) downscaleradius = 4.0;
-                else        downscaleradius = 2.0;
+                if(usejinc)
+                    downscaleradius = 4.0;
+                else
+                    downscaleradius = 2.0;
             }
             else
             {
                 puts("Switched to slower downscaling");
-                if(usejinc) downscaleradius = 6.0;
-                else        downscaleradius = 4.0;
+                if(usejinc)
+                    downscaleradius = 6.0;
+                else
+                    downscaleradius = 4.0;
             }
         }
         if(key == GLFW_KEY_P)
         {
             usejinc = !usejinc;
+            
             if(usejinc)
             {
-                if(light_downscaling) downscaleradius = 4.0;
-                else                  downscaleradius = 6.0;
+                if(light_downscaling)
+                    downscaleradius = 4.0;
+                else
+                    downscaleradius = 6.0;
                 puts("Jinc enabled");
             }
             else
             {
-                if(light_downscaling) downscaleradius = 2.0;
-                else                  downscaleradius = 4.0;
+                if(light_downscaling)
+                    downscaleradius = 2.0;
+                else
+                    downscaleradius = 4.0;
                 puts("Sinc enabled");
             }
         }
@@ -1049,12 +1131,13 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         }
         if(key == GLFW_KEY_V)
         {
-            usesharpen = false;
+            usesharpen = 0;
             puts("Edge enhancement disabled");
         }
         if(key == GLFW_KEY_N)
         {
-            usesharpen = true;
+            usesharpen = 1;
+            sharpenmode = "acuity";
             sharpradius1 = 2.0;
             sharpradius2 = 6.0;
             sharpblur1 = 0.5;
@@ -1065,7 +1148,8 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         }
         if(key == GLFW_KEY_M)
         {
-            usesharpen = true;
+            usesharpen = 1;
+            sharpenmode = "deartifact";
             sharpradius1 = 4.0;
             sharpradius2 = 8.0;
             sharpblur1 = sqrt(0.5);
@@ -1077,9 +1161,9 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         if(key == GLFW_KEY_S)
         {
             if(!mods&GLFW_MOD_SHIFT)
-                scalemode = (scalemode+1)%3;
+                scalemode = int(scalemode+1)%3;
             else
-                scalemode = (scalemode+3-1)%3;
+                scalemode = int(scalemode+3-1)%3;
             if(scalemode == 0) puts("Scaling disabled");
             if(scalemode == 1) puts("Scaling set to 'fill'");
             if(scalemode == 2) puts("Scaling set to 'fit'");
@@ -1096,7 +1180,6 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             if(invert_x) puts("Switched to manga (right to left) mode");
             else puts("Switched to western (left to right) mode");
         }
-        
     }
 }
 
@@ -1175,12 +1258,35 @@ void limit_position(int viewport_w, int viewport_h, int image_w, int image_h, fl
         x = 0;
 }
 
+void load_config()
+{
+    std::ifstream f("config.txt");
+    std::string str;
+    //puts("config:");
+    while(std::getline(f, str))
+    {
+        // This is the normal way to split a string in C++. Fuck the committee.
+        const std::string delimiter = ":";
+        const auto start = str.find(delimiter);
+        const auto end = start + delimiter.length();
+        const std::string first = str.substr(0, start);
+        const std::string second = str.substr(end);
+        
+        config[first] = {double_from_string(second), second, is_number(second)};
+        printf("%s:%s(%f)\n", first.data(), config[first].text.data(), config[first].real);
+    }
+}
+
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
 int wmain (int argc, wchar_t **argv)
-{
+{   
     wchar_t * arg;
     if(argc > 1) arg = argv[1];
     else return 0;
+    
+    setlocale(LC_NUMERIC, "C");
+    
+    load_config();
     
     float x = 0;
     float y = 0;
@@ -1331,8 +1437,6 @@ int wmain (int argc, wchar_t **argv)
         lastPgUp = pgUp;
         lastPgDn = pgDn;
         
-        const float speed = 2000;
-        const float scrollspeed = 100;
         
         float motionscale;
         if(xscale > yscale)
@@ -1375,13 +1479,12 @@ int wmain (int argc, wchar_t **argv)
         
         limit_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
         
-        myrenderer.draw_texture(myimage, -x, -y, 0.2, scale, scale);
+        myrenderer.draw_texture(myimage, -round(x), -round(y), 0.2, scale, scale);
         
         myrenderer.downscaling = scale < 1;
         myrenderer.infoscale = (scale>1)?(scale):(1);
         myrenderer.cycle_end();
         
-        constexpr float throttle = 0.004;
         if(delta < throttle)
             std::this_thread::sleep_for(std::chrono::duration<float>(throttle-delta));
     }
