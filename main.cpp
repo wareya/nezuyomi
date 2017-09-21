@@ -42,6 +42,10 @@ struct vertex {
     float x, y, z, u, v;
 };
 
+struct colorvertex {
+    float x, y, z, r, g, b, a;
+};
+
 void checkerr(int line)
 {
     GLenum err;
@@ -280,7 +284,90 @@ struct renderer {
         }
     };
     
-    unsigned int VAO, VBO, FBO, FBOtexture1, FBOtexture2;
+    struct rectprogram {
+        unsigned int program;
+        unsigned int fshader;
+        unsigned int vshader;
+        
+        rectprogram(const char * name)
+        {
+            const char * vshadersource =
+            "#version 330 core\n\
+            uniform mat4 projection;\n\
+            uniform mat4 translation;\n\
+            layout (location = 0) in vec3 aPos;\n\
+            layout (location = 1) in vec4 aCol;\n\
+            out vec4 vCol;\n\
+            void main()\n\
+            {\n\
+                gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0) * translation * projection;\n\
+                vCol = aCol;\n\
+            }\n"
+            ;
+            
+            const char * fshadersource =
+            "#version 330 core\n\
+            in vec4 vCol;\n\
+            layout(location = 0) out vec4 fragColor;\n\
+            void main()\n\
+            {\n\
+                fragColor = vCol;\n\
+            }\n"
+            ;
+            
+            checkerr(__LINE__);
+            vshader = glCreateShader(GL_VERTEX_SHADER);
+            glShaderSource(vshader, 1, &vshadersource, NULL);
+            glCompileShader(vshader);
+            checkerr(__LINE__);
+            
+            fshader = glCreateShader(GL_FRAGMENT_SHADER);
+            glShaderSource(fshader, 1, &fshadersource, NULL);
+            glCompileShader(fshader);
+            checkerr(__LINE__);
+            
+            program = glCreateProgram();
+            glAttachShader(program, vshader);
+            glAttachShader(program, fshader);
+            glLinkProgram(program);
+            checkerr(__LINE__);
+            
+            int v,f,p;
+            glGetShaderiv(vshader, GL_COMPILE_STATUS, &v);
+            glGetShaderiv(fshader, GL_COMPILE_STATUS, &f);
+            glGetProgramiv(program, GL_LINK_STATUS, &p);
+            checkerr(__LINE__);
+            if(!v or !f or !p)
+            {
+                char info[512];
+                puts("Failed to compile shader:");
+                puts(name);
+                if(!v)
+                {
+                    glGetShaderInfoLog(vshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!f)
+                {
+                    glGetShaderInfoLog(fshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!p)
+                {
+                    glGetProgramInfoLog(program, 512, NULL, info);
+                    puts(info);
+                }
+                exit(0);
+            }
+            
+            checkerr(__LINE__);
+            
+            glDeleteShader(vshader);
+            glDeleteShader(fshader);
+        }
+    };
+    
+    unsigned int VAO, VBO, RectVAO, RectVBO, FBO, FBOtexture1, FBOtexture2;
     int w, h;
     unsigned int vshader;
     unsigned int fshader;
@@ -294,6 +381,7 @@ struct renderer {
     
     GLFWwindow * win;
     postprogram * copy, * sharpen, * nusharpen;
+    rectprogram * primitive;
     renderer()
     {
         glfwSwapInterval(1);
@@ -302,6 +390,9 @@ struct renderer {
         
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        //glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1); 
+        
         win = glfwCreateWindow(1104*0.8, 600, "Hello, World!", NULL, NULL);
         
         if(!win) puts("glfw failed to init"), exit(0);
@@ -325,7 +416,9 @@ struct renderer {
         glEnable(GL_DEBUG_OUTPUT);
         glDebugMessageCallback([](GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
         {
-            puts(message);
+            if(severity != GL_DEBUG_SEVERITY_NOTIFICATION)
+                puts(message);
+            //puts(message);
         }, nullptr);
         
         glEnable(GL_DEPTH_TEST);
@@ -345,6 +438,21 @@ struct renderer {
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, u));
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
+        
+        /*
+        glGenVertexArrays(1, &RectVAO);
+        glGenBuffers(1, &RectVBO);
+        
+        glBindVertexArray(RectVAO);
+        glPrimitiveRestartIndex(65535);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
+        glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(colorvertex), (void*)0);
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(colorvertex), (void*)offsetof(colorvertex, r));
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        */
         
         checkerr(__LINE__);
         
@@ -563,6 +671,23 @@ struct renderer {
         
         checkerr(__LINE__);
         
+        // other drawing program
+        
+        /*
+        primitive = new rectprogram("primitive");
+        glUseProgram(primitive->program);
+        
+        float projection[16] = {
+            2.0f/w,  0.0f, 0.0f,-1.0f,
+            0.0f, -2.0f/h, 0.0f, 1.0f,
+            0.0f,    0.0f, 1.0f, 0.0f,
+            0.0f,    0.0f, 0.0f, 1.0f
+        };
+        checkerr(__LINE__);
+        glUniformMatrix4fv(glGetUniformLocation(primitive->program, "projection"), 1, 0, projection);
+        checkerr(__LINE__);
+        */
+        
         // FBO programs
         
         copy = new postprogram("copy", 
@@ -621,8 +746,8 @@ struct renderer {
         glUseProgram(sharpen->program);
         checkerr(__LINE__);
         glUniform1i(glGetUniformLocation(sharpen->program, "mytexture"), 0);
+        checkerr(__LINE__);
         glUniform1i(glGetUniformLocation(sharpen->program, "myJincLookup"), 1);
-        glUniform1i(glGetUniformLocation(sharpen->program, "wetness"), 1);
         checkerr(__LINE__);
         
         nusharpen = new postprogram("nusharpen", 
@@ -819,8 +944,12 @@ struct renderer {
         
         checkerr(__LINE__);
     }
-    void cycle_end()
+    void cycle_post()
     {
+        checkerr(__LINE__);
+        //glBindVertexArray(VAO);
+        //glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_BLEND);
         
@@ -866,6 +995,7 @@ struct renderer {
                 BUFFER_A();
             }
         };
+        checkerr(__LINE__);
         
         if(downscaling && usedownscalesharpening && usejinc)
         {
@@ -876,6 +1006,7 @@ struct renderer {
             glUniform1f(glGetUniformLocation(sharpen->program, "wetness"), 1.0f);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
+        checkerr(__LINE__);
         
         if(usesharpen)
         {
@@ -891,18 +1022,63 @@ struct renderer {
             glUniform1f(glGetUniformLocation(nusharpen->program, "wetness"), sharpwet);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
+        checkerr(__LINE__);
         
         FLIP_SOURCE();
         BUFFER_DONE();
         glUseProgram(copy->program);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        checkerr(__LINE__);
+    }
+        
+    void cycle_end()
+    {
+        checkerr(__LINE__);
+        //glEnable(GL_BLEND);
+        checkerr(__LINE__);
         
         glFinish();
         glfwSwapBuffers(win);
         glFinish();
+        checkerr(__LINE__);
+    }
+    void draw_rect(float x1, float y1, float x2, float y2, float r, float g, float b, float a)
+    {
+        /*
+        checkerr(__LINE__);
+        glUseProgram(primitive->program);
+        glBindVertexArray(RectVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
+        checkerr(__LINE__);
+        
+        const colorvertex vertices[] = {
+            {0,         0, 0.0f, r, g, b, a},
+            {x2-x1,     0, 0.0f, r, g, b, a},
+            {0,     y2-y1, 0.0f, r, g, b, a},
+            {x2-x1, y2-y1, 0.0f, r, g, b, a}
+        };
+        
+        float translation[16] = {
+            1.0f, 0.0f, 0.0f,   x1,
+            0.0f, 1.0f, 0.0f,   y1,
+            0.0f, 0.0f, 1.0f, 0.1f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        glUniformMatrix4fv(glGetUniformLocation(program, "translation"), 1, 0, translation);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        checkerr(__LINE__);
+        */
     }
     void draw_texture(texture * texture, float x, float y, float z, float xscale, float yscale)
     {
+        checkerr(__LINE__);
+        glUseProgram(program);
+        //glBindVertexArray(VAO);
+        //glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        checkerr(__LINE__);
+        
         float w = float(texture->w);
         float h = float(texture->h);
         const vertex vertices[] = {
@@ -920,10 +1096,6 @@ struct renderer {
         };
         
         glUniformMatrix4fv(glGetUniformLocation(program, "translation"), 1, 0, translation);
-        glUniform2f(glGetUniformLocation(program, "mySize"), w, h);
-        glUniform2f(glGetUniformLocation(program, "myScale"), xscale, yscale);
-        glUniform1i(glGetUniformLocation(program, "usejinc"), usejinc);
-        glUniform1f(glGetUniformLocation(program, "myradius"), downscaleradius);
         glBindTexture(GL_TEXTURE_2D, texture->texid);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1277,6 +1449,14 @@ void load_config()
     }
 }
 
+struct region
+{
+    int x1, y1, x2, y2;
+    std::string text;
+};
+
+std::vector<region> regions = {{798, 135, 798+53, 135+197, "僕とヒナちゃんの\n愛の巣は\nダメだからね"}};
+
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
 int wmain (int argc, wchar_t **argv)
 {   
@@ -1483,10 +1663,17 @@ int wmain (int argc, wchar_t **argv)
         
         myrenderer.downscaling = scale < 1;
         myrenderer.infoscale = (scale>1)?(scale):(1);
+        myrenderer.cycle_post();
+        
+        for(region r : regions)
+        {
+            
+        }
+        
         myrenderer.cycle_end();
         
-        if(delta < throttle)
-            std::this_thread::sleep_for(std::chrono::duration<float>(throttle-delta));
+        //if(delta < throttle)
+        //    std::this_thread::sleep_for(std::chrono::duration<float>(throttle-delta));
     }
     glfwDestroyWindow(win);
     
