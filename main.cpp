@@ -25,6 +25,8 @@ limitations under the License.
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "include/stb_image_wrapper.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "include/stb_image_write.h"
 
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
@@ -156,8 +158,10 @@ struct renderer {
     struct texture {
         int w, h, n;
         GLuint texid;
-        texture(const unsigned char * data, int w, int h)
+        unsigned char * mydata;
+        texture(unsigned char * data, int w, int h)
         {
+            mydata = data;
             this->w = w;
             this->h = h;
             this->n = 4;
@@ -170,7 +174,7 @@ struct renderer {
             glGenTextures(1, &texid);
             glBindTexture(GL_TEXTURE_2D, texid);
             printf("Actual size: %dx%d\n", this->w, this->h);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->w, this->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->w, this->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, mydata);
             
             checkerr(__LINE__);
             puts("Generating mipmaps");
@@ -183,6 +187,10 @@ struct renderer {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);//GL_LINEAR_MIPMAP_NEAREST);
             checkerr(__LINE__);
+        }
+        ~texture()
+        {
+            stbi_image_free(mydata);
         }
     };
     texture * lastTexture = nullptr;
@@ -208,7 +216,7 @@ struct renderer {
             
             lastTexture = tex;
             puts("Built texture");
-            stbi_image_free(data);
+            
             auto end = glfwGetTime();
             printf("Time: %f\n", end-start);
             return tex;
@@ -1246,6 +1254,10 @@ void myScrollEventCallback(GLFWwindow * win, double x, double y)
     scrollMutex.unlock();
 }
 
+void myMouseEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
+{
+    
+}
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
     if(action == GLFW_PRESS)
@@ -1464,9 +1476,45 @@ struct region
 {
     int x1, y1, x2, y2;
     std::string text;
+    int mode = 0; // 0: vertical; 1: horizontal
+    int lines = 1;
 };
 
-std::vector<region> regions = {{798, 135, 798+53, 135+197, "僕とヒナちゃんの\n愛の巣は\nダメだからね"}};
+//std::vector<region> regions = {{798, 135, 798+53, 135+197, "僕とヒナちゃんの\n愛の巣は\nダメだからね", 0, 1}};
+//std::vector<region> regions = {{798, 135, 798+53, 135+197, "", 0, 1}};
+std::vector<region> regions;
+
+region tempregion = {0,0,0,0,"",0,0};
+
+// forward declare int ocr(){} from ocr.cpp
+int ocr(const char * filename, const char * commandfilename);
+
+unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2)
+{
+    x1 = std::min(std::max(0, x1), tex->w-1);
+    x2 = std::min(std::max(0, x2), tex->w);
+    y1 = std::min(std::max(0, y1), tex->h-1);
+    y2 = std::min(std::max(0, y2), tex->h);
+    int w = x2-x1;
+    int h = y2-y1;
+    unsigned char * data = (unsigned char *)malloc(w*h*4);
+    
+    int tw = tex->w;
+    
+    int i = 0;
+    for(int y = y1; y < y2; y++)
+    {
+        for(int x = x1; x < x2; x++)
+        {
+            for(int c = 0; c < 4; c++)
+            {
+                data[i] = tex->mydata[(y*tw + x)*4 + c];
+                i++;
+            }
+        }
+    }
+    return data;
+}
 
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
 int wmain (int argc, wchar_t **argv)
@@ -1666,6 +1714,138 @@ int wmain (int argc, wchar_t **argv)
             scroll = 0;
         scrollMutex.unlock();
         
+        
+        int current_m1 = glfwGetMouseButton(win, 0);
+        static int last_m1 = current_m1;
+        
+        static double m1_mx_press = 0;
+        static double m1_my_press = 0;
+        static double m1_mx_release = 0;
+        static double m1_my_release = 0;
+        
+        if(current_m1 == GLFW_PRESS and last_m1 != GLFW_PRESS)
+        {
+            double mx, my;
+            glfwGetCursorPos(win, & mx, & my);
+            
+            m1_mx_press = mx;
+            m1_my_press = my;
+        }
+        else if(current_m1 != GLFW_PRESS and last_m1 == GLFW_PRESS)
+        {
+            double mx, my;
+            glfwGetCursorPos(win, & mx, & my);
+            m1_mx_release = mx;
+            m1_my_release = my;
+            
+            bool foundregion = false;
+            for(region & r : regions)
+            {
+                float x1 = (r.x1*scale-x);
+                float y1 = (r.y1*scale-y);
+                float x2 = (r.x2*scale-x);
+                float y2 = (r.y2*scale-y);
+                
+                if (m1_mx_release >= x1 and m1_mx_release <= x2 and m1_mx_press >= x1 and m1_mx_press <= x2 
+                and m1_my_release >= y1 and m1_my_release <= y2 and m1_my_press >= y1 and m1_my_press <= y2)
+                {
+                    if(r.text != std::string(""))
+                    {
+                        glfwSetClipboardString(win, r.text.data());
+                        puts(r.text.data());
+                    }
+                    else
+                    {
+                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
+                        stbi_write_png("ocr.png", r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
+                        free(data);
+                        
+                        ocr("ocr.png", "C:\\Users\\wareya\\dev\\nezuyomi\\ocr.txt");
+                        r.text = std::string(glfwGetClipboardString(win));
+                        glfwSetClipboardString(win, r.text.data());
+                        puts(r.text.data());
+                        
+                        foundregion = true;
+                        break;
+                    }
+                }
+            }
+            if(!foundregion)
+            {
+                if(abs(m1_mx_release-m1_mx_press) > 2 and abs(m1_my_release-m1_my_press) > 2)
+                {
+                    float lowerx = std::min(m1_mx_release, m1_mx_press);
+                    float upperx = std::max(m1_mx_release, m1_mx_press);
+                    float lowery = std::min(m1_my_release, m1_my_press);
+                    float uppery = std::max(m1_my_release, m1_my_press);
+                    regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
+                    
+                    tempregion = {0,0,0,0,"",0,0};
+                }
+            }
+        }
+        else if(current_m1 == GLFW_PRESS)
+        {
+            double mx, my;
+            glfwGetCursorPos(win, & mx, & my);
+            if(abs(mx-m1_mx_press) > 2 and abs(my-m1_my_press) > 2)
+            {
+                float lowerx = std::min(mx, m1_mx_press);
+                float upperx = std::max(mx, m1_mx_press);
+                float lowery = std::min(my, m1_my_press);
+                float uppery = std::max(my, m1_my_press);
+                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1};
+            }
+            else
+                tempregion = {0,0,0,0,"",0,0};
+        
+        }
+        else
+            tempregion = {0,0,0,0,"",0,0};
+        last_m1 = current_m1;
+        
+        
+        int current_m2 = glfwGetMouseButton(win, 1);
+        static int last_m2 = current_m2;
+        
+        static double m2_mx_press = 0;
+        static double m2_my_press = 0;
+        static double m2_mx_release = 0;
+        static double m2_my_release = 0;
+        
+        if(current_m2 == GLFW_PRESS and last_m2 != GLFW_PRESS)
+        {
+            double mx, my;
+            glfwGetCursorPos(win, & mx, & my);
+            
+            m2_mx_press = mx;
+            m2_my_press = my;
+        }
+        else if(current_m2 != GLFW_PRESS and last_m2 == GLFW_PRESS)
+        {
+            double mx, my;
+            glfwGetCursorPos(win, & mx, & my);
+            m2_mx_release = mx;
+            m2_my_release = my;
+            
+            for(size_t i = 0; i < regions.size(); i++)
+            {
+                region & r = regions[i];
+                float x1 = (r.x1*scale-x);
+                float y1 = (r.y1*scale-y);
+                float x2 = (r.x2*scale-x);
+                float y2 = (r.y2*scale-y);
+                
+                if (m2_mx_release >= x1 and m2_mx_release <= x2 and m2_mx_press >= x1 and m2_mx_press <= x2 
+                and m2_my_release >= y1 and m2_my_release <= y2 and m2_my_press >= y1 and m2_my_press <= y2)
+                {
+                    regions.erase(regions.begin()+i);
+                    break;
+                }
+            }
+        }
+        last_m2 = current_m2;
+        
         myrenderer.cycle_start();
         
         limit_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
@@ -1689,6 +1869,16 @@ int wmain (int argc, wchar_t **argv)
             myrenderer.draw_rect(r.x1-p, r.y1+p, r.x1+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
             myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
             myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
+        }
+        // with tempregion too
+        {
+            auto & r = tempregion;
+            float p = 1/scale;
+            myrenderer.draw_rect(r.x1-p, r.y1-p, r.x2-p, r.y1+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x1-p, r.y1+p, r.x1+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
+        
         }
         //myrenderer.draw_rect(-1, -1, 1, 1, 10, 0.2, 0.8, 1.0, 0.4);
         
