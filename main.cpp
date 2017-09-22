@@ -149,6 +149,9 @@ float sharpradius1 = 8.0;
 float sharpradius2 = 16.0;
 
 struct renderer {
+    float cam_x = 0;
+    float cam_y = 0;
+    float cam_scale = 0;
     // TODO: FIXME: add a real reference counter
     struct texture {
         int w, h, n;
@@ -371,7 +374,7 @@ struct renderer {
     int w, h;
     unsigned int vshader;
     unsigned int fshader;
-    unsigned int program;
+    unsigned int imageprogram;
     
     float jinctexture[512];
     float sinctexture[512];
@@ -390,8 +393,8 @@ struct renderer {
         
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-        //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-        //glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1); 
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1); 
         
         win = glfwCreateWindow(1104*0.8, 600, "Hello, World!", NULL, NULL);
         
@@ -421,6 +424,7 @@ struct renderer {
             //puts(message);
         }, nullptr);
         
+        
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -439,7 +443,7 @@ struct renderer {
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
         
-        /*
+        
         glGenVertexArrays(1, &RectVAO);
         glGenBuffers(1, &RectVBO);
         
@@ -452,7 +456,7 @@ struct renderer {
         glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(colorvertex), (void*)offsetof(colorvertex, r));
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
-        */
+        
         
         checkerr(__LINE__);
         
@@ -624,17 +628,17 @@ struct renderer {
         glShaderSource(fshader, 1, &fshadersource, NULL);
         glCompileShader(fshader);
         
-        program = glCreateProgram();
-        glAttachShader(program, vshader);
-        glAttachShader(program, fshader);
-        glLinkProgram(program);
+        imageprogram = glCreateProgram();
+        glAttachShader(imageprogram, vshader);
+        glAttachShader(imageprogram, fshader);
+        glLinkProgram(imageprogram);
         
         checkerr(__LINE__);
         
         int vsuccess, fsuccess, psuccess;
         glGetShaderiv(vshader, GL_COMPILE_STATUS, &vsuccess);
         glGetShaderiv(fshader, GL_COMPILE_STATUS, &fsuccess);
-        glGetProgramiv(program, GL_LINK_STATUS, &psuccess);
+        glGetProgramiv(imageprogram, GL_LINK_STATUS, &psuccess);
         if(!vsuccess or !fsuccess or !psuccess)
         {
             char info[512];
@@ -651,7 +655,7 @@ struct renderer {
             }
             if(!psuccess)
             {
-                glGetProgramInfoLog(program, 512, NULL, info);
+                glGetProgramInfoLog(imageprogram, 512, NULL, info);
                 puts(info);
             }
             
@@ -659,10 +663,10 @@ struct renderer {
         }
         checkerr(__LINE__);
         
-        glUseProgram(program);
-        glUniform1i(glGetUniformLocation(program, "mytexture"), 0);
-        glUniform1i(glGetUniformLocation(program, "myJincLookup"), 1);
-        glUniform1i(glGetUniformLocation(program, "mySincLookup"), 2);
+        glUseProgram(imageprogram);
+        glUniform1i(glGetUniformLocation(imageprogram, "mytexture"), 0);
+        glUniform1i(glGetUniformLocation(imageprogram, "myJincLookup"), 1);
+        glUniform1i(glGetUniformLocation(imageprogram, "mySincLookup"), 2);
         
         checkerr(__LINE__);
         
@@ -673,20 +677,7 @@ struct renderer {
         
         // other drawing program
         
-        /*
         primitive = new rectprogram("primitive");
-        glUseProgram(primitive->program);
-        
-        float projection[16] = {
-            2.0f/w,  0.0f, 0.0f,-1.0f,
-            0.0f, -2.0f/h, 0.0f, 1.0f,
-            0.0f,    0.0f, 1.0f, 0.0f,
-            0.0f,    0.0f, 0.0f, 1.0f
-        };
-        checkerr(__LINE__);
-        glUniformMatrix4fv(glGetUniformLocation(primitive->program, "projection"), 1, 0, projection);
-        checkerr(__LINE__);
-        */
         
         // FBO programs
         
@@ -924,11 +915,6 @@ struct renderer {
             checkerr(__LINE__);
         }
         
-        glUseProgram(program);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, FBO);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
         
         float projection[16] = {
             2.0f/w,  0.0f, 0.0f,-1.0f,
@@ -936,7 +922,18 @@ struct renderer {
             0.0f,    0.0f, 1.0f, 0.0f,
             0.0f,    0.0f, 0.0f, 1.0f
         };
-        glUniformMatrix4fv(glGetUniformLocation(program, "projection"), 1, 0, projection);
+        
+        glUseProgram(imageprogram);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, FBO);
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        
+        glUniformMatrix4fv(glGetUniformLocation(imageprogram, "projection"), 1, 0, projection);
+        
+        
+        glUseProgram(primitive->program);
+        glUniformMatrix4fv(glGetUniformLocation(primitive->program, "projection"), 1, 0, projection);
         
         glClearColor(0,0,0,1);
         glDepthMask(true);
@@ -947,8 +944,8 @@ struct renderer {
     void cycle_post()
     {
         checkerr(__LINE__);
-        //glBindVertexArray(VAO);
-        //glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glBindVertexArray(VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
         
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_BLEND);
@@ -1029,12 +1026,13 @@ struct renderer {
         glUseProgram(copy->program);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         checkerr(__LINE__);
+        
+        glEnable(GL_BLEND);
+        glEnable(GL_DEPTH_TEST);
     }
         
     void cycle_end()
     {
-        checkerr(__LINE__);
-        //glEnable(GL_BLEND);
         checkerr(__LINE__);
         
         glFinish();
@@ -1044,43 +1042,52 @@ struct renderer {
     }
     void draw_rect(float x1, float y1, float x2, float y2, float r, float g, float b, float a)
     {
-        /*
+        glDisable(GL_DEPTH_TEST);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
         checkerr(__LINE__);
         glUseProgram(primitive->program);
         glBindVertexArray(RectVAO);
         glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
         checkerr(__LINE__);
         
+        float x = (x1*cam_scale-cam_x);
+        float y = (y1*cam_scale-cam_y);
+        float w = (x2-x1)*cam_scale;
+        float h = (y2-y1)*cam_scale;
+        
         const colorvertex vertices[] = {
-            {0,         0, 0.0f, r, g, b, a},
-            {x2-x1,     0, 0.0f, r, g, b, a},
-            {0,     y2-y1, 0.0f, r, g, b, a},
-            {x2-x1, y2-y1, 0.0f, r, g, b, a}
+            {0, 0, 0.0f, r, g, b, a},
+            {w, 0, 0.0f, r, g, b, a},
+            {0, h, 0.0f, r, g, b, a},
+            {w, h, 0.0f, r, g, b, a}
         };
         
         float translation[16] = {
-            1.0f, 0.0f, 0.0f,   x1,
-            0.0f, 1.0f, 0.0f,   y1,
-            0.0f, 0.0f, 1.0f, 0.1f,
+            1.0f, 0.0f, 0.0f,    x,
+            0.0f, 1.0f, 0.0f,    y,
+            0.0f, 0.0f, 1.0f, 1.0f,
             0.0f, 0.0f, 0.0f, 1.0f
         };
         
-        glUniformMatrix4fv(glGetUniformLocation(program, "translation"), 1, 0, translation);
+        glUniformMatrix4fv(glGetUniformLocation(primitive->program, "translation"), 1, 0, translation);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         checkerr(__LINE__);
-        */
+        
+        glEnable(GL_DEPTH_TEST);
     }
-    void draw_texture(texture * texture, float x, float y, float z, float xscale, float yscale)
+    void draw_texture(texture * texture, float x, float y, float z)
     {
         checkerr(__LINE__);
-        glUseProgram(program);
-        //glBindVertexArray(VAO);
-        //glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glUseProgram(imageprogram);
+        glBindVertexArray(VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
         checkerr(__LINE__);
         
         float w = float(texture->w);
         float h = float(texture->h);
+        
         const vertex vertices[] = {
             {0, 0, 0.0f, 0.0f, 0.0f},
             {w, 0, 0.0f, 1.0f, 0.0f},
@@ -1089,13 +1096,17 @@ struct renderer {
         };
         
         float translation[16] = {
-            xscale,   0.0f, 0.0f,    x,
-              0.0f, yscale, 0.0f,    y,
-              0.0f,   0.0f, 1.0f,    z,
-              0.0f,   0.0f, 0.0f, 1.0f
+            cam_scale,      0.0f, 0.0f, round(x-cam_x),
+                 0.0f, cam_scale, 0.0f, round(y-cam_y),
+                 0.0f,      0.0f, 1.0f,    z,
+                 0.0f,      0.0f, 0.0f, 1.0f
         };
         
-        glUniformMatrix4fv(glGetUniformLocation(program, "translation"), 1, 0, translation);
+        glUniformMatrix4fv(glGetUniformLocation(imageprogram, "translation"), 1, 0, translation);
+        glUniform2f(glGetUniformLocation(imageprogram, "mySize"), w, h);
+        glUniform2f(glGetUniformLocation(imageprogram, "myScale"), cam_scale, cam_scale);
+        glUniform1i(glGetUniformLocation(imageprogram, "usejinc"), usejinc);
+        glUniform1f(glGetUniformLocation(imageprogram, "myradius"), downscaleradius);
         glBindTexture(GL_TEXTURE_2D, texture->texid);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1659,7 +1670,11 @@ int wmain (int argc, wchar_t **argv)
         
         limit_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
         
-        myrenderer.draw_texture(myimage, -round(x), -round(y), 0.2, scale, scale);
+        myrenderer.cam_x = x;
+        myrenderer.cam_y = y;
+        myrenderer.cam_scale = scale;
+        
+        myrenderer.draw_texture(myimage, 0, 0, 0.2);
         
         myrenderer.downscaling = scale < 1;
         myrenderer.infoscale = (scale>1)?(scale):(1);
@@ -1667,13 +1682,20 @@ int wmain (int argc, wchar_t **argv)
         
         for(region r : regions)
         {
-            
+            //myrenderer.draw_rect(x1, y1, x2, y2, 0.2, 0.8, 1.0, 0.5);
+            //myrenderer.draw_rect(r.x1, r.y1, r.x2, r.y2, 0.2, 0.8, 1.0, 0.5);
+            float p = 1/scale;
+            myrenderer.draw_rect(r.x1-p, r.y1-p, r.x2-p, r.y1+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x1-p, r.y1+p, r.x1+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
+            myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
         }
+        //myrenderer.draw_rect(-1, -1, 1, 1, 10, 0.2, 0.8, 1.0, 0.4);
         
         myrenderer.cycle_end();
         
-        //if(delta < throttle)
-        //    std::this_thread::sleep_for(std::chrono::duration<float>(throttle-delta));
+        if(delta < throttle)
+            glfwWaitEventsTimeout(throttle-delta);
     }
     glfwDestroyWindow(win);
     
