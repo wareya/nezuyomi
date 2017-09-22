@@ -1757,8 +1757,10 @@ int wmain (int argc, wchar_t **argv)
                     else
                     {
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
+                        puts("writing cropped image to disk");
                         stbi_write_png("ocr.png", r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
                         free(data);
+                        puts("done");
                         
                         ocr("ocr.png", "C:\\Users\\wareya\\dev\\nezuyomi\\ocr.txt");
                         r.text = std::string(glfwGetClipboardString(win));
