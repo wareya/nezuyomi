@@ -1500,9 +1500,10 @@ int freadline(FILE * f, char ** string_ref)
         return -1;
 }
 
-void load_config()
+std::string profile()
 {
     #ifdef _WIN32
+    
     int status;
     // are you fucking serious
     uint16_t * wprofilevar = utf8_to_utf16((uint8_t *)"USERPROFILE", &status);
@@ -1510,26 +1511,53 @@ void load_config()
     wchar_t * wprofile = _wgetenv((wchar_t *)wprofilevar);
     uint8_t * profile = utf16_to_utf8((uint16_t *)wprofile, &status);
     
-    auto path = std::string((char *)profile) + "\\.config\\ネズヨミ\\config.txt";
+    std::string r = std::string((char *)profile);
     
     free(wprofilevar);
     free(profile);
     
-    uint16_t * wpath = utf8_to_utf16((uint8_t *)path.data(), &status);
-    uint16_t * wmode = utf8_to_utf16((uint8_t *)"rb", &status);
+    #else
+    
+    r = std::string("~");
+    
+    #endif
+    
+    r += "/";
+    
+    return r;
+}
+
+FILE * wrap_fopen(const char * fname, const char * mode)
+{
+    #ifdef _WIN32
+    
+    int status;
+    uint16_t * wpath = utf8_to_utf16((uint8_t *)fname, &status);
+    uint16_t * wmode = utf8_to_utf16((uint8_t *)mode, &status);
     
     auto f = _wfopen((wchar_t *)wpath,(wchar_t *) wmode);
     
     free(wpath);
     free(wmode);
+    
+    return f;
+    
     #else
     
-    char * profile = "~";
-    auto path = std::string(profile) + "/.config/ネズヨミ/config.txt";
-    auto f = fopen(path.data(), "rb");
+    return fopen(fname, mode);
     
     #endif
-    
+}
+// "/.config/ネズヨミ/config.txt"
+FILE * profile_fopen(const char * fname, const char * mode)
+{
+    auto path = profile() + fname;
+    return wrap_fopen(path.data(), mode);
+}
+
+void load_config()
+{
+    auto f = profile_fopen(".config/ネズヨミ/config.txt", "rb");
     if(!f)
     {
         puts("could not open config file");
