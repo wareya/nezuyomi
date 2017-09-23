@@ -28,6 +28,8 @@ limitations under the License.
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "include/stb_image_write.h"
 
+#include "include/unishim_split.h"
+
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
 #include <mutex>
@@ -1453,14 +1455,95 @@ void limit_position(int viewport_w, int viewport_h, int image_w, int image_h, fl
         x = 0;
 }
 
+// ignores \r characters leading up to the final \n, but not \r characters in the middle of the string
+// allocates a buffer in *string_ref and reads a line into it
+// sets *string_ref to nullptr if allocation error or file is already error/EOF before starting
+// returns 0 if continuing to read makes sense
+// returns -1 if feof or ferror
+// returns -2 if allocation error
+int freadline(FILE * f, char ** string_ref)
+{
+    if(feof(f) or ferror(f))
+    {
+        *string_ref = nullptr;
+        return -1;
+    }
+    
+    auto start = ftell(f);
+    auto text_end = start;
+    
+    auto c = fgetc(f);
+    while(c != '\n' and c != EOF and !feof(f) and !ferror(f))
+    {
+        if(c != '\r') text_end = ftell(f);
+        c = fgetc(f);
+    }
+    
+    auto leftoff = ftell(f);
+    auto done = feof(f) or ferror(f);
+    
+    auto len = text_end-start;
+    
+    *string_ref = (char *)malloc(len+1);
+    if(!*string_ref)
+        return -2;
+    
+    fseek(f, start, SEEK_SET);
+    fread(*string_ref, 1, len, f);
+    (*string_ref)[len] = 0;
+    
+    fseek(f, leftoff, SEEK_SET);
+    
+    if(!done)
+        return 0;
+    else
+        return -1;
+}
+
 void load_config()
 {
-    std::ifstream f("config.txt");
-    std::string str;
+    #ifdef _WIN32
+    int status;
+    // are you fucking serious
+    uint16_t * wprofilevar = utf8_to_utf16((uint8_t *)"USERPROFILE", &status);
+    
+    wchar_t * wprofile = _wgetenv((wchar_t *)wprofilevar);
+    uint8_t * profile = utf16_to_utf8((uint16_t *)wprofile, &status);
+    
+    auto path = std::string((char *)profile) + "\\.config\\ネズヨミ\\config.txt";
+    
+    free(wprofilevar);
+    free(profile);
+    
+    uint16_t * wpath = utf8_to_utf16((uint8_t *)path.data(), &status);
+    uint16_t * wmode = utf8_to_utf16((uint8_t *)"rb", &status);
+    
+    auto f = _wfopen((wchar_t *)wpath,(wchar_t *) wmode);
+    
+    free(wpath);
+    free(wmode);
+    #else
+    
+    char * profile = "~";
+    auto path = std::string(profile) + "/.config/ネズヨミ/config.txt";
+    auto f = fopen(path.data(), "rb");
+    
+    #endif
+    
+    if(!f)
+    {
+        puts("could not open config file");
+        return;
+    }
+    
+    char * text;
     //puts("config:");
-    while(std::getline(f, str))
+    while(freadline(f, &text) == 0)
     {
         // This is the normal way to split a string in C++. Fuck the committee.
+        auto str = std::string(text);
+        free(text);
+        
         const std::string delimiter = ":";
         const auto start = str.find(delimiter);
         const auto end = start + delimiter.length();
@@ -1518,7 +1601,7 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
 
 // Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
 int wmain (int argc, wchar_t **argv)
-{   
+{
     wchar_t * arg;
     if(argc > 1) arg = argv[1];
     else return 0;
