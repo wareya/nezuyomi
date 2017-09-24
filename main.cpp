@@ -1941,13 +1941,35 @@ int main(int argc, char ** argv)
         
         oldtime = newtime;
         
-        static int lastPgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
-        static int lastPgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
+        
+        bool go_to_next_page = false;
+        bool go_to_last_page = false;
+        
+        int current_m4 = glfwGetMouseButton(win, 3);
+        static int last_m4 = current_m4;
+        if(current_m4 == GLFW_PRESS and last_m4 != GLFW_PRESS)
+            go_to_last_page = true;
+        last_m4 = current_m4;
+        
+        int current_m5 = glfwGetMouseButton(win, 4);
+        static int last_m5 = current_m5;
+        if(current_m5 == GLFW_PRESS and last_m5 != GLFW_PRESS)
+            go_to_next_page = true;
+        last_m5 = current_m5;
         
         int pgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
-        int pgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
+        static int lastPgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
+        if(pgUp and !lastPgUp)
+            go_to_last_page = true;
+        lastPgUp = pgUp;
         
-        if(pgUp and !lastPgUp and index > 0)
+        int pgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
+        static int lastPgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
+        if(pgDn and !lastPgDn)
+            go_to_next_page = true;
+        lastPgDn = pgDn;
+        
+        if(go_to_last_page and index > 0)
         {
             puts("entering A");
             repeat:
@@ -1970,7 +1992,7 @@ int main(int argc, char ** argv)
                 reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y, !pgup_to_bottom);
             }
         }
-        if(pgDn and !lastPgDn and index < int(mydir.size()-1))
+        if(go_to_next_page and index < int(mydir.size()-1))
         {
             //puts("entering B");
             repeat2:
@@ -1994,8 +2016,6 @@ int main(int argc, char ** argv)
             }
         }
         
-        lastPgUp = pgUp;
-        lastPgDn = pgDn;
         
         getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
         
