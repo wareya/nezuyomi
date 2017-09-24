@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "include/unifile.h"
+
 bool replace(std::string& str, const std::string& from, const std::string& to) {
     size_t start_pos = str.find(from);
     if(start_pos == std::string::npos)
@@ -13,7 +15,7 @@ bool replace(std::string& str, const std::string& from, const std::string& to) {
 
 int ocr(const char * filename, const char * commandfilename)
 {
-    auto f = fopen(commandfilename,  "rb");
+    auto f = wrap_fopen(commandfilename,  "rb");
     
     fseek(f, 0, SEEK_END);
     auto len = ftell(f);
@@ -35,9 +37,19 @@ int ocr(const char * filename, const char * commandfilename)
     puts("running OCR");
     while (std::getline(af, line))
     {
-        //fwrite(line.data(), 1, line.length(), f);
-        //fputs("\n", f);
+        #ifdef _WIN32
+        
+        int status;
+        wchar_t * wcommand = (wchar_t *)utf8_to_utf16((uint8_t *)line.data(), &status);
+        if(wcommand)
+            _wsystem(wcommand);
+        free(wcommand);
+        
+        #else
+        
         system(line.data());
+        
+        #endif
     }
     //fclose(f);
     

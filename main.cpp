@@ -1609,18 +1609,16 @@ void load_regions(std::string folder, std::string filename)
     auto f = profile_fopen((".config/ネズヨミ/region_"+folder+filename+".txt").data(), "rb");
     if(!f)
     {
-        puts("couldn't open file");
-        puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
+        //puts("couldn't open file");
+        //puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
         return;
     }
-    puts("loading regions for");
-    puts((folder+filename).data());
+    //puts("loading regions for");
+    //puts((folder+filename).data());
     
     char * text;
     while(freadline(f, &text) == 0)
     {
-        puts(text);
-        
         auto str = std::string(text);
         free(text);
         
@@ -1628,7 +1626,7 @@ void load_regions(std::string folder, std::string filename)
         
         if(parts.size() < 7)
         {
-            puts("too few fields");
+            //puts("too few fields");
             continue;
         }
         
@@ -1669,7 +1667,7 @@ void load_regions(std::string folder, std::string filename)
         regions.push_back({x1, y1, x2, y2, text, mode, lines});
     }
     
-    puts("done loading regions");
+    //puts("done loading regions");
     fclose(f);
 }
 
@@ -1684,8 +1682,8 @@ void write_regions(std::string folder, std::string filename)
         puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
         return;
     }
-    puts("writing regions for");
-    puts((folder+filename).data());
+    //puts("writing regions for");
+    //puts((folder+filename).data());
     
     for(const region & r : regions)
     {
@@ -2099,14 +2097,29 @@ int main(int argc, char ** argv)
                     {
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
                         puts("writing cropped image to disk");
-                        stbi_write_png((profile()+".config/temp_ocr.png").data(), r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
+                        auto f = wrap_fopen((profile()+".config/ネズヨミ/temp_ocr.png").data(), "wb");
+                        if(f)
+                        {
+                            stbi_write_png_to_func([](void * file, void * data, int size){
+                                fwrite(data, 1, size, (FILE *) file);
+                            }, f, r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
+                            fclose(f);
+                        }
                         free(data);
                         puts("done");
                         
-                        ocr((profile()+".config/temp_ocr.png").data(), "C:\\Users\\wareya\\dev\\nezuyomi\\ocr.txt");
-                        r.text = std::string(glfwGetClipboardString(win));
-                        glfwSetClipboardString(win, r.text.data());
-                        puts(r.text.data());
+                        puts((profile()+".config/ネズヨミ/temp_ocr.png").data());
+                        puts((profile()+".config/ネズヨミ/ocr.txt").data());
+                        
+                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data());
+                        
+                        auto s = glfwGetClipboardString(win);
+                        if(s)
+                        {
+                            r.text = std::string(s);
+                            glfwSetClipboardString(win, r.text.data());
+                            puts(r.text.data());
+                        }
                         
                         write_regions(folder, mydir_filenames[index]);
                         foundregion = true;
