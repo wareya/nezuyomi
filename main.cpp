@@ -1722,6 +1722,14 @@ int main(int argc, char ** argv)
         #endif
     }
     
+    #ifdef _WIN32
+    _wclosedir(dir);
+    #else
+    closedir(dir);
+    #endif
+    
+    // we are now done operating with the filesystem!
+    
     
     int index = 0;
     if(from_filename)
