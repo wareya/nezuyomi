@@ -23,8 +23,44 @@ m: Enable "deartefact" edge enhancement. Boosts some frequencies, lowers others.
 
 j, k, l: Edge enhancement strength settings: 50%, 100%, 200%.
 
-pgup, pgdown: Change page. Works even if nezuyomi was invoked with a single image. Images are sorted in whatever order the OS feeds them to nezuyomi when it iterates over them; the C++ standard says this is technically unspecified.
+pgup, pgdown, mouse4, mouse5: Change page. Works even if nezuyomi was invoked with a single image. Images are sorted in whatever order the OS feeds them to nezuyomi when it iterates over them; the C++ standard says this is technically unspecified.
 
 s: Toggle scaling mode: fill -> fit -> 1:1 -> loop. Default: fill.
 
 d: Toggle reading direction. Default: right-to-left.
+
+## OCR and OCR controls
+
+Create the directory <userdir>/.config/ネズヨミ/ -- <userdir> is ~ or /home/<username>/ on *nix and C:\Users\<username>\ on windows.
+
+controls:
+
+mouse1 drag: create a region to OCR. Must be at least 2x2 pixels on screen.
+
+mouse1 click: OCR a region.
+
+mouse2 click: Delete a region.
+
+The region list is saved to <userdir>/.config/ネズヨミ/region_<identifier_for_folder_and_filename>.txt
+
+## how to make OCR actually work
+
+The OCR code
+
+- crops the region,
+
+- writes it to <userdir>/.config/ネズヨミ/**temp_ocr.png**,
+
+- and runs <userdir>/.config/ネズヨミ/**temp_text.txt** through system()
+
+- after replacing **$SCREENSHOT** with <userdir>/.config/ネズヨミ/**temp_ocr.png**
+
+- and **$OUTPUTFILE** with <userdir>/.config/ネズヨミ/**temp_text.txt**.
+
+- Nezuyomi then reads <userdir>/.config/ネズヨミ/**temp_text.txt**,
+
+- assigns the contents to the given region,
+
+- and copies it to the clipboard.
+
+OCR being basically external means that you can use **any** command line OCR system with Nezuyomi.
