@@ -2150,8 +2150,8 @@ int main(int argc, char ** argv)
                                 r.text = std::string(s);
                                 glfwSetClipboardString(win, s);
                                 puts(s);
+                                free(s);
                             }
-                            free(s);
                             fclose(f2);
                         }
                         
