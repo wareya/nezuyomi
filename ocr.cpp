@@ -13,7 +13,7 @@ bool replace(std::string& str, const std::string& from, const std::string& to) {
     return true;
 }
 
-int ocr(const char * filename, const char * commandfilename)
+int ocr(const char * filename, const char * commandfilename, const char * outfilename)
 {
     auto f = wrap_fopen(commandfilename,  "rb");
     
@@ -29,6 +29,7 @@ int ocr(const char * filename, const char * commandfilename)
     free(data);
     
     replace(command, "$SCREENSHOT", std::string(filename));
+    replace(command, "$OUTPUTFILE", std::string(outfilename));
     
     //f = fopen("C:\\Users\\wareya\\Desktop\\exe\\tesseract\\testcommand.txt", "wb");
 
@@ -51,6 +52,7 @@ int ocr(const char * filename, const char * commandfilename)
         
         #endif
     }
+    puts("done running OCR");
     //fclose(f);
     
     return 0;

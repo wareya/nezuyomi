@@ -1726,7 +1726,7 @@ void write_regions(std::string folder, std::string filename)
 }
 
 // forward declare int ocr(){} from ocr.cpp
-int ocr(const char * filename, const char * commandfilename);
+int ocr(const char * filename, const char * commandfilename, const char * outfilename);
 
 unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2)
 {
@@ -2111,14 +2111,28 @@ int main(int argc, char ** argv)
                         puts((profile()+".config/ネズヨミ/temp_ocr.png").data());
                         puts((profile()+".config/ネズヨミ/ocr.txt").data());
                         
-                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data());
+                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data(), (profile()+".config/ネズヨミ/temp_text.txt").data());
                         
-                        auto s = glfwGetClipboardString(win);
-                        if(s)
+                        auto f2 = wrap_fopen((profile()+".config/ネズヨミ/temp_text.txt").data(), "rb");
+                        if(f2)
                         {
-                            r.text = std::string(s);
-                            glfwSetClipboardString(win, r.text.data());
-                            puts(r.text.data());
+                            fseek(f2, 0, SEEK_END);
+                            size_t len = ftell(f2);
+                            fseek(f2, 0, SEEK_SET);
+                            
+                            char * s = (char *)malloc(len+1);
+                            
+                            if(s)
+                            {
+                                fread(s, 1, len, f2);
+                                s[len] = 0;
+                                
+                                r.text = std::string(s);
+                                glfwSetClipboardString(win, s);
+                                puts(s);
+                            }
+                            free(s);
+                            fclose(f2);
                         }
                         
                         write_regions(folder, mydir_filenames[index]);
