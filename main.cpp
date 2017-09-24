@@ -24,14 +24,19 @@ limitations under the License.
 #endif
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "include/stb_image_wrapper.h"
+#include "include/stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "include/stb_image_write.h"
 
 #include "include/unishim_split.h"
+#include "include/unifile.h"
 
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
+#ifdef _WIN32
+#include "include/dirent.h"
+#else
+#include <dirent.h>
+#endif
+
 #include <mutex>
 #include <thread>
 #include <chrono>
@@ -195,28 +200,31 @@ struct renderer {
             stbi_image_free(mydata);
         }
     };
-    texture * lastTexture = nullptr;
-    texture * load_texture(const wchar_t * filename)
+    void delete_texture(texture * tex)
+    {
+        if(glIsTexture(tex->texid))
+            glDeleteTextures(1, &tex->texid);    
+    }
+    texture * load_texture(const char * filename)
     {
         auto start = glfwGetTime();
         puts("Starting load texture");
-        _putws(filename);
+        puts(filename);
+        
         fflush(stdout);
         int w, h, n;
-        unsigned char * data = stbi_load((const char *)filename, &w, &h, &n, 4);
+        
+        auto f = wrap_fopen(filename, "rb");
+        unsigned char * data = stbi_load_from_file(f, &w, &h, &n, 4);
+        fclose(f);
         puts("Done actual loading");
         if(!data) return puts("failed to open texture"), nullptr;
         else
         {
             printf("Building texture of size %dx%d\n", w, h);
             
-            if(lastTexture)
-                if(glIsTexture(lastTexture->texid))
-                    glDeleteTextures(1, &lastTexture->texid);
-            
             auto tex = new texture(data, w, h);
             
-            lastTexture = tex;
             puts("Built texture");
             
             auto end = glfwGetTime();
@@ -1132,18 +1140,18 @@ std::wstring towstring(std::string mystring)
     return W_S;
 }
 
-bool looks_like_image_filename(std::wstring string)
+bool looks_like_image_filename(std::string string)
 {
     
-    if (string.rfind(L".png") == std::string::npos
-    and string.rfind(L".jpg") == std::string::npos
-    and string.rfind(L".jpeg") == std::string::npos
-    and string.rfind(L".Png") == std::string::npos
-    and string.rfind(L".Jpg") == std::string::npos
-    and string.rfind(L".Jpeg") == std::string::npos
-    and string.rfind(L".PNG") == std::string::npos
-    and string.rfind(L".JPG") == std::string::npos
-    and string.rfind(L".JPEG") == std::string::npos)
+    if (string.rfind(".png") == std::string::npos
+    and string.rfind(".jpg") == std::string::npos
+    and string.rfind(".jpeg") == std::string::npos
+    and string.rfind(".Png") == std::string::npos
+    and string.rfind(".Jpg") == std::string::npos
+    and string.rfind(".Jpeg") == std::string::npos
+    and string.rfind(".PNG") == std::string::npos
+    and string.rfind(".JPG") == std::string::npos
+    and string.rfind(".JPEG") == std::string::npos)
         return false;
     else
         return true;
@@ -1527,27 +1535,6 @@ std::string profile()
     return r;
 }
 
-FILE * wrap_fopen(const char * fname, const char * mode)
-{
-    #ifdef _WIN32
-    
-    int status;
-    uint16_t * wpath = utf8_to_utf16((uint8_t *)fname, &status);
-    uint16_t * wmode = utf8_to_utf16((uint8_t *)mode, &status);
-    
-    auto f = _wfopen((wchar_t *)wpath,(wchar_t *) wmode);
-    
-    free(wpath);
-    free(wmode);
-    
-    return f;
-    
-    #else
-    
-    return fopen(fname, mode);
-    
-    #endif
-}
 // "/.config/ネズヨミ/config.txt"
 FILE * profile_fopen(const char * fname, const char * mode)
 {
@@ -1627,12 +1614,28 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
     return data;
 }
 
-// Unicode file path handling on windows is complete horseshit. Sorry. This should be relatively easy to change if you're on a reasonable OS.
-int wmain (int argc, wchar_t **argv)
+struct textobject {
+    std::string text;
+};
+
+#ifdef _WIN32
+
+int wmain (int argc, wchar_t ** argv)
 {
-    wchar_t * arg;
-    if(argc > 1) arg = argv[1];
-    else return 0;
+    char * arg;
+    int status;
+    if(argc > 1)
+        arg = (char *)utf16_to_utf8((uint16_t *)(argv[1]), &status);
+    else
+        return 0;
+    
+#else
+
+int main(int argc, char ** argv)
+{
+    char * arg = argc[1];
+    
+#endif
     
     setlocale(LC_NUMERIC, "C");
     
@@ -1641,6 +1644,99 @@ int wmain (int argc, wchar_t **argv)
     float x = 0;
     float y = 0;
     
+    std::string path = std::string(arg);
+    std::string filename;
+    
+    bool from_filename = false;
+    if(looks_like_image_filename(path))
+    {
+        from_filename = true;
+        int i;
+        for(i = path.length()-1; i > 0 and path[i] != '/' and path[i] != '\\'; i--);
+        
+        filename = path.substr(0, i+1);
+        path = path.substr(0, i+1);
+    }
+    
+    // TODO: abstract win32 dirent logic into own header
+    // the dirent.h we're using here converts from ANSI instead of from utf-8 for the non-wchar version, making it useless
+    
+    #ifdef _WIN32
+    
+    wchar_t * dircstr = (wchar_t *)utf8_to_utf16((uint8_t *)path.data(), &status);
+    if(!dircstr) return 0;
+    auto dir = _wopendir(dircstr);
+    free(dircstr);
+    
+    #else
+    
+    auto dir = opendir(path.data());
+    
+    #endif
+    
+    if(!dir)
+    {
+        puts("failed to open directory");
+        puts(path.data());
+        return 0;
+    }
+    
+    std::vector<std::string> mydir;
+    
+    #ifdef _WIN32
+    
+    _wdirent * myent = _wreaddir(dir);
+    #else
+    
+    dirent * myent = readdir(dir);
+    
+    #endif
+    
+    while(myent)
+    {
+        #ifdef _WIN32
+        
+        char * text = (char *)utf16_to_utf8((uint16_t *)myent->d_name, &status);
+        if(!text) return 0;
+        
+        std::string str = path + text;
+        free(text);
+        
+        #else
+        
+        std::string str = path + myent->d_name;
+        
+        #endif
+        
+        if(looks_like_image_filename(str))
+            mydir.push_back(str);
+        
+        #ifdef _WIN32
+        
+        myent = _wreaddir(dir);
+        
+        #else
+        
+        myent = readdir(dir);
+        
+        #endif
+    }
+    
+    
+    int index = 0;
+    if(from_filename)
+    {
+        for(size_t i = 0; i < mydir.size(); i++)
+        {
+            if(mydir[i] == arg)
+            {
+                index = i;
+                break;
+            }
+        }
+    }
+    
+    
     renderer myrenderer;
     
     auto & win = myrenderer.win;
@@ -1648,43 +1744,6 @@ int wmain (int argc, wchar_t **argv)
     glfwSetKeyCallback(win, myKeyEventCallback);
     glfwSetErrorCallback(error_callback);
     
-    std::vector<std::wstring> mydir;
-    
-    int index = 0;
-    
-    std::wstring directory(arg);
-    fs::path file(arg);
-    std::wstring filename = file.filename();
-    bool from_filename;
-    if(looks_like_image_filename(directory))
-    {
-        directory = fs::path(arg).parent_path().wstring();
-        if(directory == L"") directory = L".";
-        from_filename = true;
-    }
-    
-    for(auto& p : fs::directory_iterator(directory))
-    {
-        // There's something VERY DEEPLY BROKEN in mingw's implementation of std::experimental::filesystem w/r/t unicode filenames/paths.
-        // This is the only way I could get my test case to work. No, really, it is.
-        // Fucking fuck the C++ """ecosystem""", if you can even call something this destitute and broken by such a pleasant name.
-        std::wstring path = ((p.path().root_path().wstring())+(p.path().relative_path().wstring()));
-        
-        if(!looks_like_image_filename(path))
-            continue;
-        else
-        {
-            if(from_filename)
-            {
-                if(p.path().filename() == filename)
-                    from_filename = false;
-                else
-                    index++;
-            }
-            mydir.push_back(path);
-        }
-    }
-    if(index == int(mydir.size())) index = 0;
     
     auto myimage = myrenderer.load_texture(mydir[index].data());
     if(!myimage) return 0;
@@ -1717,24 +1776,6 @@ int wmain (int argc, wchar_t **argv)
         
         oldtime = newtime;
         
-        getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
-        
-        static float lastscale = scale;
-        if(scale != lastscale)
-        {
-            if(scalemode == 2)
-                reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
-            else
-            {
-                x /= lastscale;
-                x *= scale;
-                y /= lastscale;
-                y *= scale;
-                reset_position_partial(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
-            }
-        }
-        lastscale = scale;
-        
         static int lastPgUp = glfwGetKey(win, GLFW_KEY_PAGE_UP);
         static int lastPgDn = glfwGetKey(win, GLFW_KEY_PAGE_DOWN);
         
@@ -1746,6 +1787,7 @@ int wmain (int argc, wchar_t **argv)
             puts("entering A");
             repeat:
             index = std::max(index-1, 0);
+            myrenderer.delete_texture(myimage);
             myimage = myrenderer.load_texture(mydir[index].data());
             if(!myimage and index > 0)
             {
@@ -1767,6 +1809,7 @@ int wmain (int argc, wchar_t **argv)
             //puts("entering B");
             repeat2:
             index = std::min(index+1, int(mydir.size()-1));
+            myrenderer.delete_texture(myimage);
             myimage = myrenderer.load_texture(mydir[index].data());
             if(!myimage and index < int(mydir.size()-1))
             {
@@ -1786,6 +1829,24 @@ int wmain (int argc, wchar_t **argv)
         
         lastPgUp = pgUp;
         lastPgDn = pgDn;
+        
+        getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
+        
+        static float lastscale = scale;
+        if(scale != lastscale)
+        {
+            if(scalemode == 2)
+                reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
+            else
+            {
+                x /= lastscale;
+                x *= scale;
+                y /= lastscale;
+                y *= scale;
+                reset_position_partial(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
+            }
+        }
+        lastscale = scale;
         
         
         float motionscale;
