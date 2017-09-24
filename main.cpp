@@ -112,6 +112,24 @@ double double_from_string(const std::string & string)
     return real;
 }
 
+std::vector<std::string> split_string(std::string string, const std::string & delimiter)
+{
+    std::vector<std::string> r;
+    
+    size_t start = 0;
+    size_t i = string.find(delimiter, start);
+    while(i != std::string::npos)
+    {
+        r.push_back(string.substr(start, i-start));
+        start = i+delimiter.length();
+        
+        i = string.find(delimiter, start);
+    }
+    if(start < string.length())
+        r.push_back(string.substr(start));
+    return r;
+}
+
 struct conf_text {
     std::string name;
     conf_text(std::string arg_name, std::string text)
@@ -1502,10 +1520,10 @@ int freadline(FILE * f, char ** string_ref)
     
     fseek(f, leftoff, SEEK_SET);
     
-    if(!done)
-        return 0;
-    else
-        return -1;
+    if(done)
+        fgetc(f); // reset EOF state
+    
+    return 0;
 }
 
 std::string profile()
@@ -1552,7 +1570,6 @@ void load_config()
     }
     
     char * text;
-    //puts("config:");
     while(freadline(f, &text) == 0)
     {
         // This is the normal way to split a string in C++. Fuck the committee.
@@ -1560,13 +1577,13 @@ void load_config()
         free(text);
         
         const std::string delimiter = ":";
+        
         const auto start = str.find(delimiter);
         const auto end = start + delimiter.length();
         const std::string first = str.substr(0, start);
         const std::string second = str.substr(end);
         
         config[first] = {double_from_string(second), second, is_number(second)};
-        printf("%s:%s(%f)\n", first.data(), config[first].text.data(), config[first].real);
     }
 }
 
@@ -1583,6 +1600,132 @@ struct region
 std::vector<region> regions;
 
 region tempregion = {0,0,0,0,"",0,0};
+
+void load_regions(std::string folder, std::string filename)
+{
+    regions = {};
+    if(folder.length() > 0)
+        folder[folder.length()-1] = '_';
+    auto f = profile_fopen((".config/ネズヨミ/region_"+folder+filename+".txt").data(), "rb");
+    if(!f)
+    {
+        puts("couldn't open file");
+        puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
+        return;
+    }
+    puts("loading regions for");
+    puts((folder+filename).data());
+    
+    char * text;
+    while(freadline(f, &text) == 0)
+    {
+        puts(text);
+        
+        auto str = std::string(text);
+        free(text);
+        
+        auto parts = split_string(str, "\t");
+        
+        if(parts.size() < 7)
+        {
+            puts("too few fields");
+            continue;
+        }
+        
+        int x1 = double_from_string(parts[0]);
+        int y1 = double_from_string(parts[1]);
+        int x2 = double_from_string(parts[2]);
+        int y2 = double_from_string(parts[3]);
+        std::string text;
+        
+        bool escape = false;
+        for(char c : parts[4])
+        {
+            if(escape)
+            {
+                if(c == '\\')
+                    text += '\\';
+                else if(c == 'n')
+                    text += '\n';
+                else if(c == 't')
+                    text += '\t';
+                else
+                {
+                    text += '\\';
+                    text += c;
+                }
+                
+                escape = false;
+            }
+            else if(c == '\\')
+                escape = true;
+            else
+                text += c;
+        }
+        
+        int mode = double_from_string(parts[5]);
+        int lines = double_from_string(parts[6]);
+        
+        regions.push_back({x1, y1, x2, y2, text, mode, lines});
+    }
+    
+    puts("done loading regions");
+    fclose(f);
+}
+
+void write_regions(std::string folder, std::string filename)
+{
+    if(folder.length() > 0)
+        folder[folder.length()-1] = '_';
+    auto f = profile_fopen((".config/ネズヨミ/region_"+folder+filename+".txt").data(), "wb");
+    if(!f)
+    {
+        puts("couldn't open file");
+        puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
+        return;
+    }
+    puts("writing regions for");
+    puts((folder+filename).data());
+    
+    for(const region & r : regions)
+    {
+        fputs(std::to_string(r.x1).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.y1).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.x2).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.y2).data(), f);
+        fputc('\t', f);
+        for(char c : r.text)
+        {
+            if(c == '\t')
+            {
+                fputc('\\', f);
+                fputc('t', f);
+            }
+            else if(c == '\n')
+            {
+                fputc('\\', f);
+                fputc('n', f);
+            }
+            else if(c == '\\')
+            {
+                fputc('\\', f);
+                fputc('\\', f);
+            }
+            else if(c != '\r')
+                fputc(c, f);
+        }
+        fputc('\t', f);
+        fputs(std::to_string(r.mode).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.lines).data(), f);
+        fputc('\n', f);
+    }
+    
+    fclose(f);
+}
 
 // forward declare int ocr(){} from ocr.cpp
 int ocr(const char * filename, const char * commandfilename);
@@ -1629,6 +1772,8 @@ int wmain (int argc, wchar_t ** argv)
     else
         return 0;
     
+    SetConsoleCP(65001);
+    SetConsoleOutputCP(65001);
 #else
 
 int main(int argc, char ** argv)
@@ -1645,6 +1790,7 @@ int main(int argc, char ** argv)
     float y = 0;
     
     std::string path = std::string(arg);
+    std::string folder;
     std::string filename;
     
     bool from_filename = false;
@@ -1656,6 +1802,13 @@ int main(int argc, char ** argv)
         
         filename = path.substr(0, i+1);
         path = path.substr(0, i+1);
+    }
+    {
+        int i;
+        for(i = path.length()-2; i > 0 and path[i] != '/' and path[i] != '\\'; i--);
+        if(path[i] == '/' or path[i] == '\\') i += 1;
+        folder = path.substr(i).data();
+        puts(folder.data());
     }
     
     // TODO: abstract win32 dirent logic into own header
@@ -1682,6 +1835,7 @@ int main(int argc, char ** argv)
     }
     
     std::vector<std::string> mydir;
+    std::vector<std::string> mydir_filenames;
     
     #ifdef _WIN32
     
@@ -1699,20 +1853,22 @@ int main(int argc, char ** argv)
         char * text = (char *)utf16_to_utf8((uint16_t *)myent->d_name, &status);
         if(!text) return 0;
         
-        std::string str = path + text;
-        free(text);
-        
         #else
         
-        std::string str = path + myent->d_name;
+        char * text = myent->d_name;
         
         #endif
         
+        std::string str = path + text;
         if(looks_like_image_filename(str))
+        {
             mydir.push_back(str);
+            mydir_filenames.push_back(std::string(text));
+        }
         
         #ifdef _WIN32
         
+        free(text);
         myent = _wreaddir(dir);
         
         #else
@@ -1730,6 +1886,7 @@ int main(int argc, char ** argv)
     
     // we are now done operating with the filesystem!
     
+    if(mydir.size() == 0) return 0;
     
     int index = 0;
     if(from_filename)
@@ -1756,6 +1913,8 @@ int main(int argc, char ** argv)
     auto myimage = myrenderer.load_texture(mydir[index].data());
     if(!myimage) return 0;
     
+    
+    load_regions(folder, mydir_filenames[index]);
     // set default position
     
     float xscale, yscale, scale; // "scale" is actually used to scale the image. xscale and yscale are for logic.
@@ -1807,6 +1966,7 @@ int main(int argc, char ** argv)
                 index = 0;
                 myimage = myrenderer.load_texture(mydir[0].data());
             }
+            load_regions(folder, mydir_filenames[index]);
             if(reset_position_on_new_page)
             {
                 reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y, !pgup_to_bottom);
@@ -1829,6 +1989,7 @@ int main(int argc, char ** argv)
                 index = 0;
                 myimage = myrenderer.load_texture(mydir[0].data());
             }
+            load_regions(folder, mydir_filenames[index]);
             if(reset_position_on_new_page)
             {
                 reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
@@ -1938,15 +2099,16 @@ int main(int argc, char ** argv)
                     {
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
                         puts("writing cropped image to disk");
-                        stbi_write_png("ocr.png", r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
+                        stbi_write_png((profile()+".config/temp_ocr.png").data(), r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
                         free(data);
                         puts("done");
                         
-                        ocr("ocr.png", "C:\\Users\\wareya\\dev\\nezuyomi\\ocr.txt");
+                        ocr((profile()+".config/temp_ocr.png").data(), "C:\\Users\\wareya\\dev\\nezuyomi\\ocr.txt");
                         r.text = std::string(glfwGetClipboardString(win));
                         glfwSetClipboardString(win, r.text.data());
                         puts(r.text.data());
                         
+                        write_regions(folder, mydir_filenames[index]);
                         foundregion = true;
                         break;
                     }
@@ -2022,6 +2184,7 @@ int main(int argc, char ** argv)
                 and m2_my_release >= y1 and m2_my_release <= y2 and m2_my_press >= y1 and m2_my_press <= y2)
                 {
                     regions.erase(regions.begin()+i);
+                    write_regions(folder, mydir_filenames[index]);
                     break;
                 }
             }
