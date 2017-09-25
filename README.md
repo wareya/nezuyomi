@@ -3,6 +3,8 @@ Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
 Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. **Nezuyomi is experimental.**
 
+Compilation instructions at bottom of readme.
+
 ## usage
 
 Drag-drop an image or folder onto the executable, or invoke it on the command line with a single parameter of a folder or image. Nezuyomi will iterate over every png or jpg file in the given directory, or the same directory as the given image, and store their filenames. If images are added or deleted during operation, this won't be noticed. This will change once mingw-w64 adds first class C++17 filesystem support, right now the filesystem code is hacked together because it's still on an experimental implementation.
@@ -64,3 +66,9 @@ The OCR code
 - and copies it to the clipboard.
 
 OCR being basically external means that you can use **any** command line OCR system with Nezuyomi.
+
+## compilation
+
+Windows: download and extract GLFW's .a and .dll files to depends/. Run compile.sh from a mingw environment. **Nezuyomi requires a C++17 compiler.**
+
+Linux: rewrite compile.sh to link GLFW from your package manager instead of the depends/ directory. Remove -mwindows and -mconsole. Nezuyomi doesn't do anything windows-specific. Good luck.
