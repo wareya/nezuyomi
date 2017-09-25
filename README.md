@@ -89,7 +89,7 @@ The OCR code
 
 - writes it to <userdir>/.config/ネズヨミ/**temp_ocr.png**,
 
-- and runs <userdir>/.config/ネズヨミ/**temp_text.txt** through system()
+- and runs <userdir>/.config/ネズヨミ/**ocr.txt** through system()
 
 - after replacing **$SCREENSHOT** with <userdir>/.config/ネズヨミ/**temp_ocr.png**
 
