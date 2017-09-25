@@ -1345,102 +1345,6 @@ bool looks_like_image_filename(std::string string)
         return true;
 }
 
-// TODO: purge
-// Returns a utf-32 codepoint
-// Returns 0xFFFFFFFF if there was any error decoding the codepoint. There are two error types: decoding errors (invalid utf-8) and buffer overruns (the buffer cuts off mid-codepoint).
-// Advance is set to the number of code units (16-bit chunks) consumed if no error occured
-// Advance is set to 1 if a decoding error occured
-// Advance is set to 0 if a buffer overrun occured
-uint32_t utf16_pull(const uint16_t * text, size_t len, int * advance)
-{
-    if(len < 1)
-    {
-        *advance = 0;
-        return 0xFFFFFFFF;
-    }
-    
-    int i = 0;
-    uint32_t c = text[i++]; // type used is large in order to do bit shifting
-    
-    if(c >= 0xDC00 and c <= 0xDFFF) // low surrogate when initial code unit expected
-    {
-        return 0xFFFFFFFF;
-    }
-    else if (c < 0xD800 or c > 0xDBFF) // single code unit
-    {
-        *advance = i;
-        return c;
-    }
-    else if((c&0b0010'0000) == 0) // high surrogate
-    {
-        if(len < 2)
-        {
-            *advance = 0;
-            return 0xFFFFFFFF;
-        }
-        
-        uint32_t c2 = text[i++];
-        if(c < 0xDC00 or c > 0xDFFF) // initial code unit when low surrogate expected
-        {
-            *advance = 1;
-            return 0xFFFFFFFF;
-        }
-        
-        uint32_t p = 0;
-        p |=  c2&0x03FF;
-        p |=  (c&0x03FF)<<10;
-        
-        *advance = i;
-        return p;
-    }
-    return 0xFFFFFFFF;
-}
-uint32_t utf16_pull(const wchar_t * text, long long len, int * advance)
-{
-    return utf16_pull((const uint16_t *)text, len, advance);
-}
-
-std::string u16_to_u8(const wchar_t * text)
-{
-    std::string ret;
-    int len;
-    for(len = 0; text[len] != 0; len++);
-    len++; // include null terminator
-    int advance;
-    uint32_t codepoint = utf16_pull(text, len, &advance);
-    while(advance > 0)
-    {
-        text += advance;
-        len -= advance;
-        if(codepoint != 0xFFFFFFFF)
-        {
-            if(codepoint < 0x80)
-            {
-                ret += char(codepoint);
-            }
-            else if(codepoint < 0x800)
-            {
-                ret += char(((codepoint>> 6)&0b0001'1111)|0b1100'0000);
-                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
-            }
-            else if(codepoint < 0x10000)
-            {
-                ret += char(((codepoint>>12)&0b0000'1111)|0b1110'0000);
-                ret += char(((codepoint>> 6)&0b0011'1111)|0b1000'0000);
-                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
-            }
-            else if(codepoint < 0x110000)
-            {
-                ret += char(((codepoint>>18)&0b0000'0111)|0b1111'0000);
-                ret += char(((codepoint>>12)&0b0011'1111)|0b1000'0000);
-                ret += char(((codepoint>> 6)&0b0011'1111)|0b1000'0000);
-                ret += char(((codepoint>> 0)&0b0011'1111)|0b1000'0000);
-            }
-        }
-        codepoint = utf16_pull(text, len, &advance);
-    }
-    return ret;
-}
 
 std::mutex scrollMutex;
 float scroll = 0;
@@ -1718,7 +1622,8 @@ std::string profile()
     
     #endif
     
-    r += "/";
+    if(r.length() > 0)
+        r += "/";
     
     return r;
 }
@@ -2086,15 +1991,96 @@ int wmain (int argc, wchar_t ** argv)
     else
         return 0;
     
+    if(!arg)
+    {
+        puts("failed to convert file to open to UTF-8. might contain invalid UTF-16.");
+        getchar();
+        return 0;
+    }
+    
     SetConsoleCP(65001);
     SetConsoleOutputCP(65001);
+    
+    // store CWD
+    std::string cwd;
+    {
+        wchar_t * buffer;
+        buffer = _wgetcwd(0, 0);
+        if(!buffer)
+        {
+            puts("failed to get current working directory");
+            getchar();
+            return 0;
+        }
+        int status;
+        char * buffer8 = (char *)utf16_to_utf8((uint16_t *)buffer, &status);
+        if(buffer8)
+        {
+            puts("current working directory:");
+            puts(buffer8);
+            cwd = std::string(buffer8);
+            if(cwd.length() > 0)
+                cwd += "/";
+            free(buffer8);
+        }
+        free(buffer);
+    }
+    
+    bool chwd_success = false;
+    {
+        std::string profdir = profile()+".config/ネズヨミ/";
+        int status;
+        uint16_t * profdir_w = utf8_to_utf16((uint8_t *)profdir.data(), &status);
+        if(profdir_w)
+        {
+            int status2 = _wchdir((wchar_t *)profdir_w);
+            if(status2 == 0)
+                chwd_success = true;
+            free(profdir_w);
+        }
+    }
+    
 #else
 
 int main(int argc, char ** argv)
 {
     char * arg = argc[1];
     
+    // store CWD
+    std::string cwd;
+    {
+        char * buffer;
+        // almost every modern unix-like OS supports passing a null buffer to getcwd to make it allocate the buffer itself
+        buffer = getcwd(0, 0);
+        if(!buffer)
+        {
+            puts("failed to get current working directory");
+            return 0;
+        }
+        puts("current working directory:");
+        puts(buffer);
+        cwd = std::string(buffer);
+        if(cwd.length() > 0)
+            cwd += "/";
+        free(buffer);
+    }
+    
+    bool chwd_success = false;
+    {
+        std::string profdir = profile()+".config/ネズヨミ/";
+        int status = chdir(profdir.data());
+        if(status == 0)
+            chwd_success = true;
+    }
+    
 #endif
+
+    if(!chwd_success)
+    {
+        puts("Failed to set working directory to profile directory.");
+        puts("Nezuyomi doesn't require the working directory to be the profile directory, but this can still cause problems.");
+        puts("For example, this can cause problems like some OCR setups not working.");
+    }
     
     setlocale(LC_NUMERIC, "C");
     
@@ -2105,6 +2091,15 @@ int main(int argc, char ** argv)
     float y = 0;
     
     std::string path = std::string(arg);
+    
+    #ifdef _WIN32
+    if(path.length() > 2 and (path[1] != ':' or path[2] != '\\'))
+        path = cwd+path;
+    #else
+    if(path.lenght() > 0 and path[0] != '/')
+        path = cwd+path;
+    #endif
+    
     std::string folder;
     std::string filename;
     
@@ -2132,7 +2127,12 @@ int main(int argc, char ** argv)
     #ifdef _WIN32
     
     wchar_t * dircstr = (wchar_t *)utf8_to_utf16((uint8_t *)path.data(), &status);
-    if(!dircstr) return 0;
+    if(!dircstr)
+    {
+        puts("failed convert directory string");
+        getchar();
+        return 0;
+    }
     auto dir = _wopendir(dircstr);
     free(dircstr);
     
@@ -2146,6 +2146,7 @@ int main(int argc, char ** argv)
     {
         puts("failed to open directory");
         puts(path.data());
+        getchar();
         return 0;
     }
     
