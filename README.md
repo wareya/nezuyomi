@@ -7,7 +7,13 @@ Compilation instructions at bottom of readme.
 
 ## usage
 
-Drag-drop an image or folder onto the executable, or invoke it on the command line with a single parameter of a folder or image. Nezuyomi will iterate over every png or jpg file in the given directory, or the same directory as the given image, and store their filenames. If images are added or deleted during operation, this won't be noticed. This will change once mingw-w64 adds first class C++17 filesystem support, right now the filesystem code is hacked together because it's still on an experimental implementation.
+Drag-drop an image or folder onto the executable, or invoke it on the command line with a single parameter of a folder or image. Nezuyomi will iterate over every png or jpg file in the given directory, or the same directory as the given image, and store their filenames in memory.
+
+If images are added or deleted during operation, this won't be noticed.
+
+File ordering is unspecified. On my system, the filenames 1.png 10.png 2.png sort in that order instead of 1.png 2.png 10.png.
+
+Nezuyomi tries to read from ~/.config/ネズヨミ/<stuff>. If this folder doesn't exist, various functions won't work properly. Nezuyomi will create this folder on launch once I know that it looks for it correctly.
 
 ## controls
 
