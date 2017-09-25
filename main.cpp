@@ -2524,8 +2524,9 @@ int main(int argc, char ** argv)
                     float uppery = std::max(m1_my_release, m1_my_press);
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
                     
-                    float pxwide = upperx-lowerx;
+                    float pxwide = (upperx-lowerx)/scale;
                     int estimate = pxwide*0.85/textlines;
+                    if(estimate < 7) estimate = 7;
                     
                     currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
                     
