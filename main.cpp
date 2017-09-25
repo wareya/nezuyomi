@@ -27,6 +27,8 @@ limitations under the License.
 #include "include/stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "include/stb_image_write.h"
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "include/stb_truetype.h"
 
 #include "include/unishim_split.h"
 #include "include/unifile.h"
@@ -166,6 +168,7 @@ MAKEREAL(throttle, 0.004);
 #define MAKETEXT(X, Y) conf_text X(#X, Y)
 
 MAKETEXT(sharpenmode, "acuity");
+MAKETEXT(fontname, "NotoSansCJKjp-Regular.otf");
 
 float downscaleradius = 6.0;
 float sharphardness1 = 1;
@@ -184,12 +187,15 @@ struct renderer {
         int w, h, n;
         GLuint texid;
         unsigned char * mydata;
-        texture(unsigned char * data, int w, int h)
+        texture(unsigned char * data, int w, int h, bool ismono = false)
         {
             mydata = data;
             this->w = w;
             this->h = h;
-            this->n = 4;
+            if(ismono)
+                this->n = 1;
+            else
+                this->n = 4;
             
             checkerr(__LINE__);
             glActiveTexture(GL_TEXTURE0);
@@ -199,7 +205,10 @@ struct renderer {
             glGenTextures(1, &texid);
             glBindTexture(GL_TEXTURE_2D, texid);
             printf("Actual size: %dx%d\n", this->w, this->h);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->w, this->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, mydata);
+            if(ismono)
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, this->w, this->h, 0, GL_RED, GL_UNSIGNED_BYTE, mydata);
+            else
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, this->w, this->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, mydata);
             
             checkerr(__LINE__);
             puts("Generating mipmaps");
@@ -249,6 +258,21 @@ struct renderer {
             printf("Time: %f\n", end-start);
             return tex;
         }
+    }
+    // load single-channel 8bpp texture
+    texture * load_texture(uint8_t * data, int w, int h)
+    {
+        //auto start = glfwGetTime();
+        
+        //printf("Building texture of size %dx%d from memory\n", w, h);
+        
+        auto tex = new texture(data, w, h, true);
+        
+        //puts("Built texture");
+        
+        //auto end = glfwGetTime();
+        //printf("Time: %f\n", end-start);
+        return tex;
     }
     
     
@@ -406,6 +430,91 @@ struct renderer {
         }
     };
     
+    struct textprogram {
+        unsigned int program;
+        unsigned int fshader;
+        unsigned int vshader;
+        
+        textprogram(const char * name)
+        {
+            const char * vshadersource =
+            "#version 330 core\n\
+            uniform mat4 projection;\n\
+            uniform mat4 translation;\n\
+            layout (location = 0) in vec3 aPos;\n\
+            layout (location = 1) in vec2 aCoord;\n\
+            out vec4 vCol;\n\
+            out vec2 texCoord;\n\
+            void main()\n\
+            {\n\
+                gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0) * translation * projection;\n\
+                texCoord = aCoord;\n\
+            }\n"
+            ;
+            
+            const char * fshadersource =
+            "#version 330 core\n\
+            uniform sampler2D mytexture;\n\
+            in vec2 texCoord;\n\
+            layout(location = 0) out vec4 fragColor;\n\
+            void main()\n\
+            {\n\
+                fragColor = vec4(1,1,1,texture2D(mytexture, texCoord));\n\
+            }\n"
+            ;
+            
+            checkerr(__LINE__);
+            vshader = glCreateShader(GL_VERTEX_SHADER);
+            glShaderSource(vshader, 1, &vshadersource, NULL);
+            glCompileShader(vshader);
+            checkerr(__LINE__);
+            
+            fshader = glCreateShader(GL_FRAGMENT_SHADER);
+            glShaderSource(fshader, 1, &fshadersource, NULL);
+            glCompileShader(fshader);
+            checkerr(__LINE__);
+            
+            program = glCreateProgram();
+            glAttachShader(program, vshader);
+            glAttachShader(program, fshader);
+            glLinkProgram(program);
+            checkerr(__LINE__);
+            
+            int v,f,p;
+            glGetShaderiv(vshader, GL_COMPILE_STATUS, &v);
+            glGetShaderiv(fshader, GL_COMPILE_STATUS, &f);
+            glGetProgramiv(program, GL_LINK_STATUS, &p);
+            checkerr(__LINE__);
+            if(!v or !f or !p)
+            {
+                char info[512];
+                puts("Failed to compile shader:");
+                puts(name);
+                if(!v)
+                {
+                    glGetShaderInfoLog(vshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!f)
+                {
+                    glGetShaderInfoLog(fshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!p)
+                {
+                    glGetProgramInfoLog(program, 512, NULL, info);
+                    puts(info);
+                }
+                exit(0);
+            }
+            
+            checkerr(__LINE__);
+            
+            glDeleteShader(vshader);
+            glDeleteShader(fshader);
+        }
+    };
+    
     unsigned int VAO, VBO, RectVAO, RectVBO, FBO, FBOtexture1, FBOtexture2;
     int w, h;
     unsigned int vshader;
@@ -421,6 +530,7 @@ struct renderer {
     GLFWwindow * win;
     postprogram * copy, * sharpen, * nusharpen;
     rectprogram * primitive;
+    textprogram * mytextprogram;
     renderer()
     {
         glfwSwapInterval(1);
@@ -715,6 +825,10 @@ struct renderer {
         
         primitive = new rectprogram("primitive");
         
+        // other drawing program
+        
+        mytextprogram = new textprogram("textprogram");
+        
         // FBO programs
         
         copy = new postprogram("copy", 
@@ -967,9 +1081,11 @@ struct renderer {
         
         glUniformMatrix4fv(glGetUniformLocation(imageprogram, "projection"), 1, 0, projection);
         
-        
         glUseProgram(primitive->program);
         glUniformMatrix4fv(glGetUniformLocation(primitive->program, "projection"), 1, 0, projection);
+        
+        glUseProgram(mytextprogram->program);
+        glUniformMatrix4fv(glGetUniformLocation(mytextprogram->program, "projection"), 1, 0, projection);
         
         glClearColor(0,0,0,1);
         glDepthMask(true);
@@ -1076,7 +1192,7 @@ struct renderer {
         glFinish();
         checkerr(__LINE__);
     }
-    void draw_rect(float x1, float y1, float x2, float y2, float r, float g, float b, float a)
+    void draw_rect(float x1, float y1, float x2, float y2, float r, float g, float b, float a, bool nocamera = false)
     {
         glDisable(GL_DEPTH_TEST);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1087,10 +1203,21 @@ struct renderer {
         glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
         checkerr(__LINE__);
         
-        float x = (x1*cam_scale-cam_x);
-        float y = (y1*cam_scale-cam_y);
-        float w = (x2-x1)*cam_scale;
-        float h = (y2-y1)*cam_scale;
+        float x, y, w, h;
+        if(nocamera)
+        {
+            x = x1;
+            y = y1;
+            w = x2-x1;
+            h = y2-y1;
+        }
+        else
+        {
+            x = (x1*cam_scale-cam_x);
+            y = (y1*cam_scale-cam_y);
+            w = (x2-x1)*cam_scale;
+            h = (y2-y1)*cam_scale;
+        }
         
         const colorvertex vertices[] = {
             {0, 0, 0.0f, r, g, b, a},
@@ -1115,6 +1242,12 @@ struct renderer {
     }
     void draw_texture(texture * texture, float x, float y, float z)
     {
+        if(!texture)
+            return;
+        
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        
         checkerr(__LINE__);
         glUseProgram(imageprogram);
         glBindVertexArray(VAO);
@@ -1148,6 +1281,43 @@ struct renderer {
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         checkerr(__LINE__);
     }
+    void draw_text_texture(texture * texture, float x, float y, float z)
+    {
+        if(!texture)
+            return;
+        
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        
+        checkerr(__LINE__);
+        glUseProgram(mytextprogram->program);
+        glBindVertexArray(VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        checkerr(__LINE__);
+        
+        float w = float(texture->w);
+        float h = float(texture->h);
+        
+        const vertex vertices[] = {
+            {0, 0, 0.0f, 0.0f, 0.0f},
+            {w, 0, 0.0f, 1.0f, 0.0f},
+            {0, h, 0.0f, 0.0f, 1.0f},
+            {w, h, 0.0f, 1.0f, 1.0f}
+        };
+        
+        float translation[16] = {
+            1.0f, 0.0f, 0.0f,    x,
+            0.0f, 1.0f, 0.0f,    y,
+            0.0f, 0.0f, 1.0f, 1.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        glUniformMatrix4fv(glGetUniformLocation(mytextprogram->program, "translation"), 1, 0, translation);
+        glBindTexture(GL_TEXTURE_2D, texture->texid);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        checkerr(__LINE__);
+    }
 };
 
 std::wstring towstring(std::string mystring)
@@ -1175,7 +1345,7 @@ bool looks_like_image_filename(std::string string)
         return true;
 }
 
-
+// TODO: purge
 // Returns a utf-32 codepoint
 // Returns 0xFFFFFFFF if there was any error decoding the codepoint. There are two error types: decoding errors (invalid utf-8) and buffer overruns (the buffer cuts off mid-codepoint).
 // Advance is set to the number of code units (16-bit chunks) consumed if no error occured
@@ -1352,7 +1522,7 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             sharpwet = 2.0;
             puts("Edge enhancement strength set to 2");
         }
-        if(key == GLFW_KEY_V)
+        if(key == GLFW_KEY_B)
         {
             usesharpen = 0;
             puts("Edge enhancement disabled");
@@ -1587,17 +1757,163 @@ void load_config()
     }
 }
 
+bool fontinitialized = false;
+stbtt_fontinfo fontinfo;
+uint8_t * fontbuffer;
+
+void init_font()
+{
+    auto fontfile = profile_fopen((".config/ネズヨミ/"+std::string(fontname)).data(), "rb");
+    if(!fontfile)
+    {
+        puts("failed to open font file");
+        return;
+    }
+    
+    fseek(fontfile, 0, SEEK_END);
+    uint64_t fontsize = ftell(fontfile);
+    fseek(fontfile, 0, SEEK_SET);
+    
+    fontbuffer = (uint8_t*)malloc(fontsize);
+    if(!fontbuffer)
+    {
+        puts("could not allocate font data");
+        fclose(fontfile);
+        return;
+    }
+    if(fread(fontbuffer, 1, fontsize, fontfile) != fontsize)
+    {
+        puts("failed to read font file");
+        fclose(fontfile);
+        return;
+    }
+    fclose(fontfile);
+    
+    if(stbtt_InitFont(&fontinfo, fontbuffer, stbtt_GetFontOffsetForIndex(fontbuffer, 0)) == 0)
+    {
+        puts("Something happened initializing the font");
+        return;
+    }
+    
+    fontinitialized = true;
+}
+
+// Gets how tall the font's ascent and descent area is if rendered at the given size.
+int font_height_pixels(float size)
+{
+    if(!fontinitialized) return 0;
+    float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
+    int ascent, descent;
+    stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, nullptr);
+    return (ascent-descent)*fontscale;
+}
+
+// Cache of codepoint -> glyph index
+std::map<uint32_t, uint32_t> indexcache;
+uint32_t glyph_lookup(uint32_t codepoint)
+{
+    if(!fontinitialized) return 0;
+    //if(indexcache.count(codepoint) > 0)
+    //    return indexcache[codepoint];
+    //else
+    {
+        uint32_t index = stbtt_FindGlyphIndex(&fontinfo, codepoint);
+        //indexcache[codepoint] = index;
+        return index;
+    }
+}
+
+struct glyph
+{
+    renderer::texture * texture = 0;
+    int w, h, x, y;
+    float advance;
+    float kern;
+    uint32_t index;
+    renderer * myrenderer = 0;
+    
+    glyph(uint32_t codepoint, float size, renderer * myrenderer)
+    {
+        puts("bv");
+        if(!fontinitialized) return;
+        this->myrenderer = myrenderer;
+        
+        float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
+        index = glyph_lookup(codepoint);
+        
+        auto data = stbtt_GetGlyphBitmap(&fontinfo, fontscale, fontscale, index, &w, &h, &x, &y);
+        if(data)
+        {
+            texture = myrenderer->load_texture(data, w, h);
+            if(!texture)
+                puts("failed to generate texture");
+            else
+            puts("setting texture");
+            free(data);
+        }
+        else
+            puts("failed to render glyph");
+        
+        int advance, bearing;
+        
+        stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
+        
+        this->advance = fontscale*advance;
+        puts("bc");
+    }
+    ~glyph()
+    {
+        puts("deleting texture");
+        myrenderer->delete_texture(texture);
+    }
+};
+
+std::map<uint32_t, glyph*> textcache;
+struct subtitle
+{
+    std::vector<uint32_t> codepoints;
+    int initialized = false;
+    float size;
+    renderer * myrenderer;
+    
+    subtitle()
+    {
+        
+    }
+    subtitle(std::string text, float size, renderer * myrenderer)
+    {
+        puts("av");
+        if(!fontinitialized) return;
+        this->size = size;
+        this->myrenderer = myrenderer;
+        int status = utf8_iterate((uint8_t*)text.data(), 0, [](uint32_t codepoint, UNISHIM_PUN_TYPE * userdata) -> int {
+            if(codepoint == '\r') return 0;
+            auto self = (subtitle *)userdata;
+            if(textcache.count(codepoint) == 0)
+                textcache[codepoint] = new glyph(codepoint, self->size, self->myrenderer);
+            self->codepoints.push_back(codepoint);
+            return 0;
+        }, this);
+        initialized = true;
+        puts("ac");
+    }
+};
+
 struct region
 {
     int x1, y1, x2, y2;
     std::string text;
-    int mode = 0; // 0: vertical; 1: horizontal
-    int lines = 1;
+    int mode = 0; // 0: vertical; 1: horizontal; not implemented yet
+    int pixel_scale = 32; // for resizing the image to a particular scale when doing OCR; not implemented yet
 };
+
+subtitle currentsubtitle;
 
 //std::vector<region> regions = {{798, 135, 798+53, 135+197, "僕とヒナちゃんの\n愛の巣は\nダメだからね", 0, 1}};
 //std::vector<region> regions = {{798, 135, 798+53, 135+197, "", 0, 1}};
 std::vector<region> regions;
+
+region * currentregion = 0;
 
 region tempregion = {0,0,0,0,"",0,0};
 
@@ -1662,9 +1978,9 @@ void load_regions(std::string folder, std::string filename)
         }
         
         int mode = double_from_string(parts[5]);
-        int lines = double_from_string(parts[6]);
+        int pixel_scale = double_from_string(parts[6]);
         
-        regions.push_back({x1, y1, x2, y2, text, mode, lines});
+        regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale});
     }
     
     //puts("done loading regions");
@@ -1718,7 +2034,7 @@ void write_regions(std::string folder, std::string filename)
         fputc('\t', f);
         fputs(std::to_string(r.mode).data(), f);
         fputc('\t', f);
-        fputs(std::to_string(r.lines).data(), f);
+        fputs(std::to_string(r.pixel_scale).data(), f);
         fputc('\n', f);
     }
     
@@ -1783,6 +2099,7 @@ int main(int argc, char ** argv)
     setlocale(LC_NUMERIC, "C");
     
     load_config();
+    init_font();
     
     float x = 0;
     float y = 0;
@@ -2112,6 +2429,11 @@ int main(int argc, char ** argv)
                     {
                         glfwSetClipboardString(win, r.text.data());
                         puts(r.text.data());
+                        currentsubtitle = subtitle(r.text, 24, &myrenderer);
+                        
+                        currentregion = &r;
+                        foundregion = true;
+                        break;
                     }
                     else
                     {
@@ -2149,11 +2471,18 @@ int main(int argc, char ** argv)
                                 
                                 r.text = std::string(s);
                                 glfwSetClipboardString(win, s);
-                                puts(s);
+                                
+                                puts(r.text.data());
+                                currentsubtitle = subtitle(r.text, 24, &myrenderer);
+                                puts("rjkrek");
+                                
                                 free(s);
+                                puts("fddrtht");
                             }
                             fclose(f2);
                         }
+                        
+                        currentregion = &r;
                         
                         write_regions(folder, mydir_filenames[index]);
                         foundregion = true;
@@ -2170,6 +2499,8 @@ int main(int argc, char ** argv)
                     float lowery = std::min(m1_my_release, m1_my_press);
                     float uppery = std::max(m1_my_release, m1_my_press);
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
+                    
+                    currentregion = &(regions[regions.size()-1]);
                     
                     tempregion = {0,0,0,0,"",0,0};
                 }
@@ -2189,7 +2520,6 @@ int main(int argc, char ** argv)
             }
             else
                 tempregion = {0,0,0,0,"",0,0};
-        
         }
         else
             tempregion = {0,0,0,0,"",0,0};
@@ -2230,13 +2560,38 @@ int main(int argc, char ** argv)
                 if (m2_mx_release >= x1 and m2_mx_release <= x2 and m2_mx_press >= x1 and m2_mx_press <= x2 
                 and m2_my_release >= y1 and m2_my_release <= y2 and m2_my_press >= y1 and m2_my_press <= y2)
                 {
+                    if(&r == currentregion)
+                        currentregion = 0;
+                    
                     regions.erase(regions.begin()+i);
                     write_regions(folder, mydir_filenames[index]);
                     break;
                 }
             }
+            currentsubtitle = subtitle();
         }
         last_m2 = current_m2;
+        
+        
+        int current_v = glfwGetKey(win, GLFW_KEY_V);
+        static int last_v = current_v;
+        bool ctrl_pressed = ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) or (glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS));
+        
+        if(current_v == GLFW_PRESS and last_v != GLFW_PRESS and ctrl_pressed)
+        {
+            auto s = glfwGetClipboardString(win);
+            if(s)
+            {
+                currentregion->text = std::string(s);
+                currentsubtitle = subtitle(currentregion->text, 24, &myrenderer);
+                
+                write_regions(folder, mydir_filenames[index]);
+            }
+        }
+        
+        last_v = current_v;
+        
+        
         
         myrenderer.cycle_start();
         
@@ -2271,6 +2626,40 @@ int main(int argc, char ** argv)
             myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
             myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
         
+        }
+        if(currentsubtitle.initialized)
+        {
+            ////puts("bfr");
+            uint32_t lastindex = 0;
+            float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, 24);
+            
+            int ascent, descent, linegap;
+            stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
+            float actual_descent = descent*fontscale;
+            float x = 0;
+            float y = myrenderer.h + actual_descent;
+            
+            myrenderer.draw_rect(0, myrenderer.h-(ascent-descent)*fontscale, myrenderer.w, myrenderer.h, 0, 0, 0, 0.5, true);
+            
+            int i = 0;
+            for(auto c : currentsubtitle.codepoints)
+            {
+                ////puts("a");
+                auto glyph = textcache[c];
+                ////puts("y");
+                if(glyph->texture)
+                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y), 0.2);
+                
+                if(lastindex)
+                    x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, glyph->index);
+                ////puts("u");
+                lastindex = glyph->index;
+                
+                x += glyph->advance;
+                
+                ////puts("b");
+                i++;
+            }
         }
         //myrenderer.draw_rect(-1, -1, 1, 1, 10, 0.2, 0.8, 1.0, 0.4);
         

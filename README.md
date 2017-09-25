@@ -15,7 +15,7 @@ o: Toggle low quality downscaling. Cuts the gathering radius in half. Can make s
 
 i: Toggle downscale post sharpening. Only applies to jinc. A very weak "unsharp mask" style sharpening filter. Off by default.
 
-v: Disable edge enhancement. Edge enhancement is disabled by default.
+b: Disable edge enhancement. Edge enhancement is disabled by default.
 
 n: Enable "acuity" edge enhancement. Like a local low frequency boost. For upscaling.
 
