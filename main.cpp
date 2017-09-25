@@ -1812,8 +1812,9 @@ struct region
     int pixel_scale = 32;
 };
 
-int textscale = 32;
-int textlines = 1;
+int textscale = 32; // most OCR software works best at a particular pixel size per character. for the OCR setup I have, it's 32 pixels. This will be an option later.
+int textlines = 1; // used for estimation after you select a region
+float paddingestimate = 0.35; // estimate of internal padding between lines
 
 subtitle currentsubtitle;
 
@@ -1977,6 +1978,55 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
         }
     }
     return data;
+}
+
+int estimate_width(unsigned char * data, int width, int height)
+{
+    int first_low_saturation = -1;
+    int last_low_saturation = -1;
+    int first_high_saturation = -1;
+    int last_high_saturation = -1;
+    float typical_saturation = 0;
+    float typical_saturation_normalize = 0;
+    
+    for(int y = 10; y < height-10; y++)
+    {
+        for(int x = 3; x < width-3; x++)
+        {
+            float saturation = 0;
+            for(int c = 0; c < 3; c++)
+            {
+                saturation += data[(y*width + x)*4 + c];
+            }
+            saturation /= (256*3);
+            if(x < 10 or x > width-10 or y < 23 or y > height-23)
+            {
+                typical_saturation += saturation;
+                typical_saturation_normalize += 1;
+            }
+            if(saturation < 0.4 and (x < first_low_saturation or first_low_saturation == -1))
+                first_low_saturation = x;
+            if(saturation < 0.4 and (x > last_low_saturation or last_low_saturation == -1))
+                last_low_saturation = x;
+            if(saturation > 0.6 and (x < first_high_saturation or first_high_saturation == -1))
+                first_high_saturation = x;
+            if(saturation > 0.6 and (x > last_high_saturation or last_high_saturation == -1))
+                last_high_saturation = x;
+        }
+    }
+    typical_saturation /= typical_saturation_normalize;
+    // looks like black on white
+    if(typical_saturation > 0.5)
+    {
+        puts("looks like black on white");
+        return std::max(7, last_low_saturation-first_low_saturation);
+    }
+    // looks like white on black
+    else
+    {
+        puts("looks like white on black");
+        return std::max(7, last_high_saturation-first_high_saturation);
+    }
 }
 
 struct textobject {
@@ -2387,27 +2437,41 @@ int main(int argc, char ** argv)
             washolding = true;
         }
         
+        bool altpressed = (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
+        bool ctrlpressed = (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+        
         scrollMutex.lock();
-            if((glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) and scroll != 0)
+            if(scroll != 0)
             {
-                textscale += scroll;
-                if(textscale < 1) textscale = 1;
-                currentsubtitle = subtitle(std::string("set expected text size for OCR to ")+std::to_string(textscale), 24, &myrenderer);
-            }
-            else if((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) and scroll != 0)
-            {
-                textlines += scroll;
-                if(textlines < 1) textlines = 1;
-                currentsubtitle = subtitle(std::string("set expected line count for OCR to ")+std::to_string(textlines)+std::string(" (only used in estimations)"), 24, &myrenderer);
-            }
-            else
-            {
-                if(xscale > yscale)
-                    y -= scroll*scrollspeed*motionscale;
+                if(altpressed and ctrlpressed)
+                {
+                    paddingestimate += scroll*0.05;
+                    paddingestimate = round(paddingestimate*20)/20;
+                    if(paddingestimate < 0) paddingestimate = 0;
+                    if(paddingestimate > 1) paddingestimate = 1;
+                    currentsubtitle = subtitle(std::string("set padding estimate for OCR to ")+std::to_string((int)(paddingestimate*100)), 24, &myrenderer);
+                }
+                else if(altpressed)
+                {
+                    textscale += scroll;
+                    if(textscale < 1) textscale = 1;
+                    currentsubtitle = subtitle(std::string("set expected text size for OCR to ")+std::to_string(textscale), 24, &myrenderer);
+                }
+                else if(ctrlpressed)
+                {
+                    textlines += scroll;
+                    if(textlines < 1) textlines = 1;
+                    currentsubtitle = subtitle(std::string("set expected line count for OCR to ")+std::to_string(textlines)+std::string(" (only used in estimations)"), 24, &myrenderer);
+                }
                 else
-                    x -= scroll*scrollspeed*motionscale*(invert_x?-1:1);
+                {
+                    if(xscale > yscale)
+                        y -= scroll*scrollspeed*motionscale;
+                    else
+                        x -= scroll*scrollspeed*motionscale*(invert_x?-1:1);
+                }
+                scroll = 0;
             }
-            scroll = 0;
         scrollMutex.unlock();
         
         
@@ -2458,6 +2522,7 @@ int main(int argc, char ** argv)
                     else
                     {
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
+                        
                         puts("writing cropped image to disk");
                         auto f = wrap_fopen((profile()+".config/ネズヨミ/temp_ocr.png").data(), "wb");
                         if(f)
@@ -2519,13 +2584,19 @@ int main(int argc, char ** argv)
                 if(abs(m1_mx_release-m1_mx_press) > 2 and abs(m1_my_release-m1_my_press) > 2)
                 {
                     float lowerx = std::min(m1_mx_release, m1_mx_press);
-                    float upperx = std::max(m1_mx_release, m1_mx_press);
                     float lowery = std::min(m1_my_release, m1_my_press);
+                    float upperx = std::max(m1_mx_release, m1_mx_press);
                     float uppery = std::max(m1_my_release, m1_my_press);
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
+                    auto & r = regions[regions.size()-1];
                     
-                    float pxwide = (upperx-lowerx)/scale;
-                    int estimate = pxwide*0.85/textlines;
+                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
+                    int estimated_width = estimate_width(data, r.x2-r.x1, r.y2-r.y1);
+                    printf("estimated width %d\n", estimated_width);
+                    free(data);
+                    
+                    float pxwide = estimated_width;
+                    int estimate = pxwide/textlines * (1 - float(textlines-1)/(textlines)*paddingestimate); // estimate removal of internal padding
                     if(estimate < 7) estimate = 7;
                     
                     currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
