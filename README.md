@@ -41,6 +41,8 @@ One option per line. The supported options and defaults are:
     (sharpenmode, "acuity")
     (fontname, "NotoSansCJKjp-Regular.otf")
 
+(sharpenmode does not actually work as an option at this time)
+
 The font is loaded from ~/.config/ネズヨミ/<fontname>
 
 ## controls
