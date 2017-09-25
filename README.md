@@ -15,6 +15,34 @@ File ordering is unspecified. On my system, the filenames 1.png 10.png 2.png sor
 
 Nezuyomi tries to read from ~/.config/ネズヨミ/<stuff>. If this folder doesn't exist, various functions won't work properly. Nezuyomi will create this folder on launch once I know that it looks for it correctly.
 
+## config
+
+Create ~/.config/ネズヨミ/config.txt
+
+The format looks like this:
+
+    reset_position_on_new_page:1
+
+One option per line. The supported options and defaults are:
+
+    (scalemode, 1)
+    (usejinc, 1)
+    (usedownscalesharpening, 1)
+    (usesharpen, 0)
+    (sharpwet, 1)
+    (light_downscaling, 0)
+    (reset_position_on_new_page, 1)
+    (invert_x, 1)
+    (pgup_to_bottom, 1)
+    (speed, 2000)
+    (scrollspeed, 100)
+    (throttle, 0.004)
+
+    (sharpenmode, "acuity")
+    (fontname, "NotoSansCJKjp-Regular.otf")
+
+The font is loaded from ~/.config/ネズヨミ/<fontname>
+
 ## controls
 
 p: Switch between jinc and sinc downscaling. Jinc by default. Jinc reduces noise from dithering much better than sinc, but in theory, can reproduce text worse. Sinc uses half the radius of jinc and is therefore faster. (Upscaling uses hermite cubic splines and cannot be changed.)
