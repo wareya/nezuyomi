@@ -1953,15 +1953,15 @@ void write_regions(std::string folder, std::string filename)
 // forward declare int ocr(){} from ocr.cpp
 int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale);
 
-unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2)
+unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height)
 {
     x1 = std::min(std::max(0, x1), tex->w-1);
     x2 = std::min(std::max(0, x2), tex->w);
     y1 = std::min(std::max(0, y1), tex->h-1);
     y2 = std::min(std::max(0, y2), tex->h);
-    int w = x2-x1;
-    int h = y2-y1;
-    unsigned char * data = (unsigned char *)malloc(w*h*4);
+    *width = x2-x1;
+    *height = y2-y1;
+    unsigned char * data = (unsigned char *)malloc(*width**height*4);
     
     int tw = tex->w;
     
@@ -2521,7 +2521,8 @@ int main(int argc, char ** argv)
                     }
                     else
                     {
-                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
+                        int img_w, img_h;
+                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h);
                         
                         puts("writing cropped image to disk");
                         auto f = wrap_fopen((profile()+".config/ネズヨミ/temp_ocr.png").data(), "wb");
@@ -2529,7 +2530,7 @@ int main(int argc, char ** argv)
                         {
                             stbi_write_png_to_func([](void * file, void * data, int size){
                                 fwrite(data, 1, size, (FILE *) file);
-                            }, f, r.x2-r.x1, r.y2-r.y1, 4, data, (r.x2-r.x1)*4);
+                            }, f, img_w, img_h, 4, data, img_w*4);
                             fclose(f);
                         }
                         free(data);
@@ -2590,8 +2591,9 @@ int main(int argc, char ** argv)
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
                     auto & r = regions[regions.size()-1];
                     
-                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2);
-                    int estimated_width = estimate_width(data, r.x2-r.x1, r.y2-r.y1);
+                    int img_w, img_h;
+                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h);
+                    int estimated_width = estimate_width(data, img_w, img_h);
                     printf("estimated width %d\n", estimated_width);
                     free(data);
                     
