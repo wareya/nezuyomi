@@ -69,7 +69,7 @@ d: Toggle reading direction. Default: right-to-left.
 
 ## OCR and OCR controls
 
-Create the directory <userdir>/.config/ネズヨミ/ -- <userdir> is ~ or /home/<username>/ on *nix and C:\Users\<username>\ on windows.
+Create the directory \<userdir>/.config/ネズヨミ/ -- \<userdir> is ~ or /home/<username>/ on *nix and C:\Users\<username>\ on windows.
 
 controls:
 
@@ -79,7 +79,7 @@ mouse1 click: OCR a region.
 
 mouse2 click: Delete a region.
 
-The region list is saved to <userdir>/.config/ネズヨミ/region_<identifier_for_folder_and_filename>.txt
+The region list is saved to \<userdir>/.config/ネズヨミ/region_<identifier_for_folder_and_filename>.txt
 
 ## how to make OCR actually work
 
@@ -87,15 +87,15 @@ The OCR code
 
 - crops the region,
 
-- writes it to <userdir>/.config/ネズヨミ/**temp_ocr.png**,
+- writes it to \<userdir>/.config/ネズヨミ/**temp_ocr.png**,
 
-- and runs <userdir>/.config/ネズヨミ/**ocr.txt** through system()
+- and runs \<userdir>/.config/ネズヨミ/**ocr.txt** through system()
 
-- after replacing **$SCREENSHOT** with <userdir>/.config/ネズヨミ/**temp_ocr.png**
+- after replacing **$SCREENSHOT** with \<userdir>/.config/ネズヨミ/**temp_ocr.png**
 
-- and **$OUTPUTFILE** with <userdir>/.config/ネズヨミ/**temp_text.txt**.
+- and **$OUTPUTFILE** with \<userdir>/.config/ネズヨミ/**temp_text.txt**.
 
-- Nezuyomi then reads <userdir>/.config/ネズヨミ/**temp_text.txt**,
+- Nezuyomi then reads \<userdir>/.config/ネズヨミ/**temp_text.txt**,
 
 - assigns the contents to the given region,
 
