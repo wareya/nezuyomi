@@ -1809,8 +1809,11 @@ struct region
     int x1, y1, x2, y2;
     std::string text;
     int mode = 0; // 0: vertical; 1: horizontal; not implemented yet
-    int pixel_scale = 32; // for resizing the image to a particular scale when doing OCR; not implemented yet
+    int pixel_scale = 32;
 };
+
+int textscale = 32;
+int textlines = 1;
 
 subtitle currentsubtitle;
 
@@ -1947,7 +1950,7 @@ void write_regions(std::string folder, std::string filename)
 }
 
 // forward declare int ocr(){} from ocr.cpp
-int ocr(const char * filename, const char * commandfilename, const char * outfilename);
+int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale);
 
 unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2)
 {
@@ -2307,6 +2310,7 @@ int main(int argc, char ** argv)
             load_regions(folder, mydir_filenames[index]);
             if(reset_position_on_new_page)
             {
+                getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
                 reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y, !pgup_to_bottom);
             }
         }
@@ -2330,10 +2334,10 @@ int main(int argc, char ** argv)
             load_regions(folder, mydir_filenames[index]);
             if(reset_position_on_new_page)
             {
+                getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
                 reset_position(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale, x, y);
             }
         }
-        
         
         getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
         
@@ -2384,10 +2388,25 @@ int main(int argc, char ** argv)
         }
         
         scrollMutex.lock();
-            if(xscale > yscale)
-                y -= scroll*scrollspeed*motionscale;
+            if((glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) and scroll != 0)
+            {
+                textscale += scroll;
+                if(textscale < 1) textscale = 1;
+                currentsubtitle = subtitle(std::string("set expected text size for OCR to ")+std::to_string(textscale), 24, &myrenderer);
+            }
+            else if((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) and scroll != 0)
+            {
+                textlines += scroll;
+                if(textlines < 1) textlines = 1;
+                currentsubtitle = subtitle(std::string("set expected line count for OCR to ")+std::to_string(textlines)+std::string(" (only used in estimations)"), 24, &myrenderer);
+            }
             else
-                x -= scroll*scrollspeed*motionscale*(invert_x?-1:1);
+            {
+                if(xscale > yscale)
+                    y -= scroll*scrollspeed*motionscale;
+                else
+                    x -= scroll*scrollspeed*motionscale*(invert_x?-1:1);
+            }
             scroll = 0;
         scrollMutex.unlock();
         
@@ -2454,7 +2473,11 @@ int main(int argc, char ** argv)
                         puts((profile()+".config/ネズヨミ/temp_ocr.png").data());
                         puts((profile()+".config/ネズヨミ/ocr.txt").data());
                         
-                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data(), (profile()+".config/ネズヨミ/temp_text.txt").data());
+                        r.pixel_scale = textscale;
+                        
+                        std::string scale_double_percent = std::to_string(32/float(textscale)*200);
+                        
+                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()));
                         
                         auto f2 = wrap_fopen((profile()+".config/ネズヨミ/temp_text.txt").data(), "rb");
                         if(f2)
@@ -2500,6 +2523,11 @@ int main(int argc, char ** argv)
                     float lowery = std::min(m1_my_release, m1_my_press);
                     float uppery = std::max(m1_my_release, m1_my_press);
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
+                    
+                    float pxwide = upperx-lowerx;
+                    int estimate = pxwide*0.85/textlines;
+                    
+                    currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
                     
                     currentregion = &(regions[regions.size()-1]);
                     
