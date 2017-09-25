@@ -2,4 +2,6 @@ Nezuyomi is licensed under the Apache 2.0 license.
 
 Nezuyomi uses glfw3, which is licensed under the zlib/libpng license.
 
-Nezuyomi uses gl3w and stb_image, which are released under public domain dedications.
+Nezuyomi uses gl3w, stb_image, stb_image_write, and stb_truetype, which are released under public domain dedications.
+
+Nezuyomi uses dirent.h by Toni Ronkko, which is released under the MIT license.
