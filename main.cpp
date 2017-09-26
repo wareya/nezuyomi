@@ -230,7 +230,8 @@ struct renderer {
     void delete_texture(texture * tex)
     {
         if(glIsTexture(tex->texid))
-            glDeleteTextures(1, &tex->texid);    
+            glDeleteTextures(1, &tex->texid);
+        delete tex;
     }
     texture * load_texture(const char * filename)
     {
@@ -251,7 +252,6 @@ struct renderer {
             printf("Building texture of size %dx%d\n", w, h);
             
             auto tex = new texture(data, w, h);
-            free(data);
             
             puts("Built texture");
             
