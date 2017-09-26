@@ -542,7 +542,7 @@ struct renderer {
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1); 
         
-        win = glfwCreateWindow(1104*0.8, 600, "Hello, World!", NULL, NULL);
+        win = glfwCreateWindow(1104*0.8, 600, "ネズヨミ nezuyomi, an image viewer", NULL, NULL);
         
         if(!win) puts("glfw failed to init"), exit(0);
         glfwMakeContextCurrent(win);
