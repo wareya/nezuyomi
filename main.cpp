@@ -1360,6 +1360,7 @@ void myMouseEventCallback(GLFWwindow * win, int key, int scancode, int action, i
 {
     
 }
+// FIXME: store event in a buffer with a mutex around it
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
     if(action == GLFW_PRESS)
@@ -1465,13 +1466,13 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             if(scalemode == 1) puts("Scaling set to 'fill'");
             if(scalemode == 2) puts("Scaling set to 'fit'");
         }
-        if(key == GLFW_KEY_D)
+        if(key == GLFW_KEY_T)
         {
             reset_position_on_new_page = !reset_position_on_new_page;
             if(reset_position_on_new_page) puts("Position will now be reset on page change");
             else puts("Position no longer reset on page change");
         }
-        if(key == GLFW_KEY_F)
+        if(key == GLFW_KEY_R)
         {
             invert_x = !invert_x;
             if(invert_x) puts("Switched to manga (right to left) mode");
@@ -1739,7 +1740,6 @@ struct glyph
     
     glyph(uint32_t codepoint, float size, renderer * myrenderer)
     {
-        puts("bv");
         if(!fontinitialized) return;
         this->myrenderer = myrenderer;
         
@@ -1753,7 +1753,7 @@ struct glyph
             if(!texture)
                 puts("failed to generate texture");
             else
-            puts("setting texture");
+                puts("rendered glyph");
             free(data);
         }
         else
@@ -1764,7 +1764,6 @@ struct glyph
         stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
         
         this->advance = fontscale*advance;
-        puts("bc");
     }
     ~glyph()
     {
@@ -1787,7 +1786,6 @@ struct subtitle
     }
     subtitle(std::string text, float size, renderer * myrenderer)
     {
-        puts("av");
         if(!fontinitialized) return;
         this->size = size;
         this->myrenderer = myrenderer;
@@ -1800,7 +1798,6 @@ struct subtitle
             return 0;
         }, this);
         initialized = true;
-        puts("ac");
     }
 };
 
@@ -1826,7 +1823,7 @@ region * currentregion = 0;
 
 region tempregion = {0,0,0,0,"",0,0};
 
-void load_regions(std::string folder, std::string filename)
+void load_regions(std::string folder, std::string filename, int corewidth, int coreheight)
 {
     regions = {};
     if(folder.length() > 0)
@@ -1842,6 +1839,11 @@ void load_regions(std::string folder, std::string filename)
     //puts((folder+filename).data());
     
     char * text;
+    bool firstline = true;
+    
+    int loader_width = corewidth;
+    int loader_height = coreheight;
+    
     while(freadline(f, &text) == 0)
     {
         auto str = std::string(text);
@@ -1849,16 +1851,29 @@ void load_regions(std::string folder, std::string filename)
         
         auto parts = split_string(str, "\t");
         
-        if(parts.size() < 7)
+        if(firstline and parts.size() == 2)
         {
-            //puts("too few fields");
+            int width = double_from_string(parts[0]);
+            if(width != 0)
+                loader_width = width;
+            
+            int height = double_from_string(parts[1]);
+            if(height != 0)
+                loader_height = height;
+            
+            firstline = false;
             continue;
         }
         
-        int x1 = double_from_string(parts[0]);
-        int y1 = double_from_string(parts[1]);
-        int x2 = double_from_string(parts[2]);
-        int y2 = double_from_string(parts[3]);
+        if(parts.size() < 7)
+            continue;
+        
+        firstline = false;
+        
+        int x1 = double_from_string(parts[0])/corewidth*loader_width;
+        int y1 = double_from_string(parts[1])/coreheight*loader_height;
+        int x2 = double_from_string(parts[2])/corewidth*loader_width;
+        int y2 = double_from_string(parts[3])/coreheight*loader_height;
         std::string text;
         
         bool escape = false;
@@ -1896,7 +1911,7 @@ void load_regions(std::string folder, std::string filename)
     fclose(f);
 }
 
-void write_regions(std::string folder, std::string filename)
+void write_regions(std::string folder, std::string filename, int width, int height)
 {
     if(folder.length() > 0)
         folder[folder.length()-1] = '_';
@@ -1909,6 +1924,11 @@ void write_regions(std::string folder, std::string filename)
     }
     //puts("writing regions for");
     //puts((folder+filename).data());
+    
+    fputs(std::to_string(width).data(), f);
+    fputc('\t', f);
+    fputs(std::to_string(height).data(), f);
+    fputc('\n', f);
     
     for(const region & r : regions)
     {
@@ -2032,6 +2052,8 @@ int estimate_width(unsigned char * data, int width, int height)
 struct textobject {
     std::string text;
 };
+
+int ocrmode = 0;
 
 #ifdef _WIN32
 
@@ -2163,7 +2185,7 @@ int main(int argc, char ** argv)
         int i;
         for(i = path.length()-1; i > 0 and path[i] != '/' and path[i] != '\\'; i--);
         
-        filename = path.substr(0, i+1);
+        filename = path.substr(i+1);
         path = path.substr(0, i+1);
     }
     {
@@ -2262,14 +2284,19 @@ int main(int argc, char ** argv)
     {
         for(size_t i = 0; i < mydir.size(); i++)
         {
-            if(mydir[i] == arg)
+            std::string testpath = std::string(mydir[i]);
+            int j = 0;
+            for(j = testpath.length()-1; j > 0 and testpath[j] != '/' and testpath[j] != '\\'; j--);
+            
+            std::string testfilename = testpath.substr(j+1);
+            
+            if(testfilename == filename)
             {
                 index = i;
                 break;
             }
         }
     }
-    
     
     renderer myrenderer;
     
@@ -2283,7 +2310,7 @@ int main(int argc, char ** argv)
     if(!myimage) return 0;
     
     
-    load_regions(folder, mydir_filenames[index]);
+    load_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
     // set default position
     
     float xscale, yscale, scale; // "scale" is actually used to scale the image. xscale and yscale are for logic.
@@ -2357,7 +2384,7 @@ int main(int argc, char ** argv)
                 index = 0;
                 myimage = myrenderer.load_texture(mydir[0].data());
             }
-            load_regions(folder, mydir_filenames[index]);
+            load_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
             if(reset_position_on_new_page)
             {
                 getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
@@ -2381,7 +2408,7 @@ int main(int argc, char ** argv)
                 index = 0;
                 myimage = myrenderer.load_texture(mydir[0].data());
             }
-            load_regions(folder, mydir_filenames[index]);
+            load_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
             if(reset_position_on_new_page)
             {
                 getscale(myrenderer.w, myrenderer.h, myimage->w, myimage->h, xscale, yscale, scale);
@@ -2416,26 +2443,53 @@ int main(int argc, char ** argv)
         
         
         washolding = false;
-        if(glfwGetKey(win, GLFW_KEY_UP))
+        if(glfwGetKey(win, GLFW_KEY_UP) or glfwGetKey(win, GLFW_KEY_E))
         {
             y -= speed*delta*motionscale;
             washolding = true;
         }
-        if(glfwGetKey(win, GLFW_KEY_DOWN))
+        if(glfwGetKey(win, GLFW_KEY_DOWN) or glfwGetKey(win, GLFW_KEY_D))
         {
             y += speed*delta*motionscale;
             washolding = true;
         }
-        if(glfwGetKey(win, GLFW_KEY_LEFT))
+        if(glfwGetKey(win, GLFW_KEY_LEFT) or glfwGetKey(win, GLFW_KEY_W))
         {
             x -= speed*delta*motionscale;
             washolding = true;
         }
-        if(glfwGetKey(win, GLFW_KEY_RIGHT))
+        if(glfwGetKey(win, GLFW_KEY_RIGHT) or glfwGetKey(win, GLFW_KEY_F))
         {
             x += speed*delta*motionscale;
             washolding = true;
         }
+        
+        int pressing_z = glfwGetKey(win, GLFW_KEY_Z);
+        static int last_pressing_z = pressing_z;
+        if(pressing_z and !last_pressing_z)
+        {
+            ocrmode = 0;
+            currentsubtitle = subtitle("ocr set to mode 1 (ocr.txt)", 24, &myrenderer);
+        }
+        last_pressing_z = pressing_z;
+        
+        int pressing_x = glfwGetKey(win, GLFW_KEY_X);
+        static int last_pressing_x = pressing_x;
+        if(pressing_x and !last_pressing_x)
+        {
+            ocrmode = 1;
+            currentsubtitle = subtitle("ocr set to mode 2 (ocr2.txt)", 24, &myrenderer);
+        }
+        last_pressing_x = pressing_x;
+        
+        int pressing_c = glfwGetKey(win, GLFW_KEY_C);
+        static int last_pressing_c = pressing_c;
+        if(pressing_c and !last_pressing_c)
+        {
+            ocrmode = 2;
+            currentsubtitle = subtitle("ocr set to mode 3 (ocr3.txt)", 24, &myrenderer);
+        }
+        last_pressing_c = pressing_c;
         
         bool altpressed = (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
         bool ctrlpressed = (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
@@ -2543,7 +2597,16 @@ int main(int argc, char ** argv)
                         
                         std::string scale_double_percent = std::to_string(32/float(textscale)*200);
                         
-                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), (profile()+".config/ネズヨミ/ocr.txt").data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()));
+                        std::string ocrfile;
+                        
+                        if(ocrmode == 1)
+                            ocrfile = (profile()+".config/ネズヨミ/ocr2.txt");
+                        else if(ocrmode == 2)
+                            ocrfile = (profile()+".config/ネズヨミ/ocr3.txt");
+                        else
+                            ocrfile = (profile()+".config/ネズヨミ/ocr.txt");
+                        
+                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), ocrfile.data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()));
                         
                         auto f2 = wrap_fopen((profile()+".config/ネズヨミ/temp_text.txt").data(), "rb");
                         if(f2)
@@ -2574,7 +2637,7 @@ int main(int argc, char ** argv)
                         
                         currentregion = &r;
                         
-                        write_regions(folder, mydir_filenames[index]);
+                        write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
                         foundregion = true;
                         break;
                     }
@@ -2667,7 +2730,7 @@ int main(int argc, char ** argv)
                         currentregion = 0;
                     
                     regions.erase(regions.begin()+i);
-                    write_regions(folder, mydir_filenames[index]);
+                    write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
                     break;
                 }
             }
@@ -2688,7 +2751,7 @@ int main(int argc, char ** argv)
                 currentregion->text = std::string(s);
                 currentsubtitle = subtitle(currentregion->text, 24, &myrenderer);
                 
-                write_regions(folder, mydir_filenames[index]);
+                write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
             }
         }
         

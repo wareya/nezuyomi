@@ -1,6 +1,8 @@
 # nezuyomi
 Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
+**If you want to use OCR you have to read the readme to know how to set it up.**
+
 Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. **Nezuyomi is experimental.**
 
 Compilation instructions at bottom of readme.
@@ -43,7 +45,7 @@ One option per line. The supported options and defaults are:
 
 (sharpenmode does not actually work as an option at this time)
 
-The font is loaded from ~/.config/ネズヨミ/<fontname>
+The font is loaded from ~/.config/ネズヨミ/<fontname> **and needs to be installed manually**.
 
 ## controls
 
@@ -65,7 +67,11 @@ pgup, pgdown, mouse4, mouse5: Change page. Works even if nezuyomi was invoked wi
 
 s: Toggle scaling mode: fill -> fit -> 1:1 -> loop. Default: fill.
 
-d: Toggle reading direction. Default: right-to-left.
+r: Toggle reading direction. Default: right-to-left.
+
+t: Toggle whether position is reset on new page.
+
+Arrows or EWDF (like WASD) to pan. Or scroll wheel. It's EWDF instead of WASD for personal reasons. Controls will be configurable later.
 
 ## OCR and OCR controls
 
@@ -80,6 +86,8 @@ mouse1 click: OCR a region.
 mouse2 click: Delete a region.
 
 The region list is saved to \<userdir>/.config/ネズヨミ/region_<identifier_for_folder_and_filename>.txt
+
+z, x, c: Change OCR scripts. ocr.txt, ocr2.txt, ocr3.txt
 
 ## how to make OCR actually work
 
