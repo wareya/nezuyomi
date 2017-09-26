@@ -15,7 +15,7 @@ If images are added or deleted during operation, this won't be noticed.
 
 File ordering is unspecified. On my system, the filenames 1.png 10.png 2.png sort in that order instead of 1.png 2.png 10.png.
 
-Nezuyomi tries to read from ~/.config/ネズヨミ/<stuff>. If this folder doesn't exist, various functions won't work properly. Nezuyomi will create this folder on launch once I know that it looks for it correctly.
+Nezuyomi tries to read from ~/.config/ネズヨミ/\<stuff>. If this folder doesn't exist, various functions won't work properly. Nezuyomi will create this folder on launch once I know that it looks for it correctly.
 
 ## config
 
@@ -45,7 +45,7 @@ One option per line. The supported options and defaults are:
 
 (sharpenmode does not actually work as an option at this time)
 
-The font is loaded from ~/.config/ネズヨミ/<fontname> **and needs to be installed manually**.
+The font is loaded from ~/.config/ネズヨミ/\<fontname> **and needs to be installed manually**.
 
 ## controls
 
@@ -75,19 +75,31 @@ Arrows or EWDF (like WASD) to pan. Or scroll wheel. It's EWDF instead of WASD fo
 
 ## OCR and OCR controls
 
-Create the directory \<userdir>/.config/ネズヨミ/ -- \<userdir> is ~ or /home/<username>/ on *nix and C:\Users\<username>\ on windows.
+Create the directory \<userdir>/.config/ネズヨミ/ -- \<userdir> is ~ or /home/\<username>/ on *nix and C:\Users\\<username>\ on windows.
 
 controls:
 
 mouse1 drag: create a region to OCR. Must be at least 2x2 pixels on screen.
 
-mouse1 click: OCR a region.
+mouse1 click: OCR a region. does not re-OCR it if it already has associated text.
 
 mouse2 click: Delete a region.
 
-The region list is saved to \<userdir>/.config/ネズヨミ/region_<identifier_for_folder_and_filename>.txt
+The region list is saved to \<userdir>/.config/ネズヨミ/region_\<identifier_for_folder_and_filename>.txt
 
 z, x, c: Change OCR scripts. ocr.txt, ocr2.txt, ocr3.txt
+
+When you make a region, nezuyomi will estimate the appropriate text resolution for you, pretending that it's vertical text. This is because, for some reason, a lot of OCR works very badly on vertical text unless it's scaled exactly right going into it. You should ignore the estimate for horizontal text and just use whatever's within half/double the actual text height in image pixels.
+
+ctrl+scroll: change the line count for size estimation
+
+ctrl+alt+scroll: change the amount of padding between lines for size estimation. percentage multiple of whatever the normal line width might be. only affects estimation when assuming 2+ lines
+
+alt+scroll: change the expected pixel size of the text. relative to 32px. sizes between 16 and 32 are common in manga scans. has a much bigger impact on the quality of vertical OCR than horizontal OCR. fed to script in $SCALE as a percent, doubled, without the % sign.
+
+shift+alt+scroll: change x-axis shear (translating rows horizontally). fed to script in $XSHEAR as a string formatted like 0.12
+
+shift+ctrl+scroll: change y-axis shear (translating columns vertically). fed to script in $YSHEAR as a string formatted like 0.12
 
 ## how to make OCR actually work
 
