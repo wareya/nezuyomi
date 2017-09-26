@@ -7,13 +7,18 @@
 
 bool replace(std::string& str, const std::string& from, const std::string& to) {
     size_t start_pos = str.find(from);
-    if(start_pos == std::string::npos)
-        return false;
-    str.replace(start_pos, from.length(), to);
+    int i = 0;
+    while(start_pos != std::string::npos)
+    {
+        str.replace(start_pos, from.length(), to);
+        start_pos = str.find(from);
+        i++;
+    }
+    printf("replaced %s %d times\n", from.data(), i);
     return true;
 }
 
-int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale)
+int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale, const char * xshear, const char * yshear)
 {
     auto f = wrap_fopen(commandfilename,  "rb");
     
@@ -31,6 +36,8 @@ int ocr(const char * filename, const char * commandfilename, const char * outfil
     replace(command, "$SCREENSHOT", std::string(filename));
     replace(command, "$OUTPUTFILE", std::string(outfilename));
     replace(command, "$SCALE", std::string(scale));
+    replace(command, "$XSHEAR", std::string(xshear));
+    replace(command, "$YSHEAR", std::string(yshear));
     
     //f = fopen("C:\\Users\\wareya\\Desktop\\exe\\tesseract\\testcommand.txt", "wb");
 
@@ -44,7 +51,11 @@ int ocr(const char * filename, const char * commandfilename, const char * outfil
         int status;
         wchar_t * wcommand = (wchar_t *)utf8_to_utf16((uint8_t *)line.data(), &status);
         if(wcommand)
+        {
+            _putws(wcommand);
+            puts("");
             _wsystem(wcommand);
+        }
         free(wcommand);
         
         #else

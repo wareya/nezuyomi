@@ -251,6 +251,7 @@ struct renderer {
             printf("Building texture of size %dx%d\n", w, h);
             
             auto tex = new texture(data, w, h);
+            free(data);
             
             puts("Built texture");
             
@@ -262,6 +263,7 @@ struct renderer {
     // load single-channel 8bpp texture
     texture * load_texture(uint8_t * data, int w, int h)
     {
+        if(!data) return nullptr;
         //auto start = glfwGetTime();
         
         //printf("Building texture of size %dx%d from memory\n", w, h);
@@ -1661,6 +1663,8 @@ void load_config()
         
         config[first] = {double_from_string(second), second, is_number(second)};
     }
+    
+    fclose(f);
 }
 
 bool fontinitialized = false;
@@ -1805,8 +1809,10 @@ struct region
 {
     int x1, y1, x2, y2;
     std::string text;
-    int mode = 0; // 0: vertical; 1: horizontal; not implemented yet
+    int mode = 0; // 0: vertical; 1: horizontal; 2: horizontal, alternate language?
     int pixel_scale = 32;
+    int xskew = 0;
+    int yskew = 0;
 };
 
 int textscale = 32; // most OCR software works best at a particular pixel size per character. for the OCR setup I have, it's 32 pixels. This will be an option later.
@@ -1821,7 +1827,7 @@ std::vector<region> regions;
 
 region * currentregion = 0;
 
-region tempregion = {0,0,0,0,"",0,0};
+region tempregion = {0,0,0,0,"",0,0,0,0};
 
 void load_regions(std::string folder, std::string filename, int corewidth, int coreheight)
 {
@@ -1865,46 +1871,56 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             continue;
         }
         
-        if(parts.size() < 7)
-            continue;
-        
-        firstline = false;
-        
-        int x1 = double_from_string(parts[0])/corewidth*loader_width;
-        int y1 = double_from_string(parts[1])/coreheight*loader_height;
-        int x2 = double_from_string(parts[2])/corewidth*loader_width;
-        int y2 = double_from_string(parts[3])/coreheight*loader_height;
-        std::string text;
-        
-        bool escape = false;
-        for(char c : parts[4])
+        if(parts.size() == 7 or parts.size() == 9)
         {
-            if(escape)
+            firstline = false;
+            
+            int x1 = double_from_string(parts[0])/corewidth*loader_width;
+            int y1 = double_from_string(parts[1])/coreheight*loader_height;
+            int x2 = double_from_string(parts[2])/corewidth*loader_width;
+            int y2 = double_from_string(parts[3])/coreheight*loader_height;
+            std::string text;
+            
+            bool escape = false;
+            for(char c : parts[4])
             {
-                if(c == '\\')
-                    text += '\\';
-                else if(c == 'n')
-                    text += '\n';
-                else if(c == 't')
-                    text += '\t';
-                else
+                if(escape)
                 {
-                    text += '\\';
-                    text += c;
+                    if(c == '\\')
+                        text += '\\';
+                    else if(c == 'n')
+                        text += '\n';
+                    else if(c == 't')
+                        text += '\t';
+                    else
+                    {
+                        text += '\\';
+                        text += c;
+                    }
+                    
+                    escape = false;
                 }
-                
-                escape = false;
+                else if(c == '\\')
+                    escape = true;
+                else
+                    text += c;
             }
-            else if(c == '\\')
-                escape = true;
-            else
-                text += c;
+            
+            int mode = double_from_string(parts[5]);
+            int pixel_scale = double_from_string(parts[6]);
+            
+            if(parts.size() == 7)
+            {
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, 0, 0});
+            }
+            else if(parts.size() == 9)
+            {
+                int xskew = double_from_string(parts[7]);
+                int yskew = double_from_string(parts[8]);
+                
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, xskew, yskew});
+            }
         }
-        
-        int mode = double_from_string(parts[5]);
-        int pixel_scale = double_from_string(parts[6]);
-        
-        regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale});
     }
     
     //puts("done loading regions");
@@ -1964,6 +1980,10 @@ void write_regions(std::string folder, std::string filename, int width, int heig
         fputs(std::to_string(r.mode).data(), f);
         fputc('\t', f);
         fputs(std::to_string(r.pixel_scale).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.xskew).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.yskew).data(), f);
         fputc('\n', f);
     }
     
@@ -1971,7 +1991,7 @@ void write_regions(std::string folder, std::string filename, int width, int heig
 }
 
 // forward declare int ocr(){} from ocr.cpp
-int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale);
+int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale, const char * xshear, const char * yshear);
 
 unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height)
 {
@@ -2054,6 +2074,8 @@ struct textobject {
 };
 
 int ocrmode = 0;
+int shear_x = 0;
+int shear_y = 0;
 
 #ifdef _WIN32
 
@@ -2064,7 +2086,11 @@ int wmain (int argc, wchar_t ** argv)
     if(argc > 1)
         arg = (char *)utf16_to_utf8((uint16_t *)(argv[1]), &status);
     else
+    {
+        puts("Nezuyomi must be invoked with a png or jpeg image or a directory containing png and/or jpeg images. Drag one onto it or give it a command line argument.");
+        getchar();
         return 0;
+    }
     
     if(!arg)
     {
@@ -2493,17 +2519,42 @@ int main(int argc, char ** argv)
         
         bool altpressed = (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
         bool ctrlpressed = (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+        bool shiftpressed = (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
         
         scrollMutex.lock();
             if(scroll != 0)
             {
-                if(altpressed and ctrlpressed)
+                if(shiftpressed and altpressed and !ctrlpressed)
+                {
+                    shear_x += scroll;
+                    if(shear_x > 20) shear_x = 20;
+                    if(shear_x < -20) shear_x = -20;
+                    std::string about = "";
+                    if(shear_x > 0)
+                        about = "% (pushes top edge leftwards)";
+                    if(shear_x < 0)
+                        about = "% (pushes top edge rightwards)";
+                    currentsubtitle = subtitle(std::string("set x axis shear for OCR to ")+std::to_string((int)(shear_x))+about, 24, &myrenderer);
+                }
+                else if(shiftpressed and !altpressed and ctrlpressed)
+                {
+                    shear_y += scroll;
+                    if(shear_y > 20) shear_y = 20;
+                    if(shear_y < -20) shear_y = -20;
+                    std::string about = "";
+                    if(shear_y > 0)
+                        about = "% (pushes right edge downwards)";
+                    if(shear_y < 0)
+                        about = "% (pushes right edge upwards)";
+                    currentsubtitle = subtitle(std::string("set y axis shear for OCR to ")+std::to_string((int)(shear_y))+about, 24, &myrenderer);
+                }
+                else if(altpressed and ctrlpressed)
                 {
                     paddingestimate += scroll*0.05;
                     paddingestimate = round(paddingestimate*20)/20;
                     if(paddingestimate < 0) paddingestimate = 0;
                     if(paddingestimate > 1) paddingestimate = 1;
-                    currentsubtitle = subtitle(std::string("set padding estimate for OCR to ")+std::to_string((int)(paddingestimate*100)), 24, &myrenderer);
+                    currentsubtitle = subtitle(std::string("set padding estimate for OCR to ")+std::to_string((int)(paddingestimate*100))+"%", 24, &myrenderer);
                 }
                 else if(altpressed)
                 {
@@ -2594,8 +2645,13 @@ int main(int argc, char ** argv)
                         puts((profile()+".config/ネズヨミ/ocr.txt").data());
                         
                         r.pixel_scale = textscale;
+                        r.xskew = shear_x;
+                        r.yskew = shear_y;
                         
                         std::string scale_double_percent = std::to_string(32/float(textscale)*200);
+                        
+                        std::string xshear_string = std::to_string(shear_x/100.0);
+                        std::string yshear_string = std::to_string(shear_y/100.0);
                         
                         std::string ocrfile;
                         
@@ -2606,7 +2662,7 @@ int main(int argc, char ** argv)
                         else
                             ocrfile = (profile()+".config/ネズヨミ/ocr.txt");
                         
-                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), ocrfile.data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()));
+                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), ocrfile.data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()), xshear_string.data(), yshear_string.data());
                         
                         auto f2 = wrap_fopen((profile()+".config/ネズヨミ/temp_text.txt").data(), "rb");
                         if(f2)
@@ -2651,7 +2707,7 @@ int main(int argc, char ** argv)
                     float lowery = std::min(m1_my_release, m1_my_press);
                     float upperx = std::max(m1_mx_release, m1_mx_press);
                     float uppery = std::max(m1_my_release, m1_my_press);
-                    regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1});
+                    regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale});
                     auto & r = regions[regions.size()-1];
                     
                     int img_w, img_h;
@@ -2668,7 +2724,7 @@ int main(int argc, char ** argv)
                     
                     currentregion = &(regions[regions.size()-1]);
                     
-                    tempregion = {0,0,0,0,"",0,0};
+                    tempregion = {0,0,0,0,"",0,0,0,0};
                 }
             }
         }
@@ -2682,13 +2738,13 @@ int main(int argc, char ** argv)
                 float upperx = std::max(mx, m1_mx_press);
                 float lowery = std::min(my, m1_my_press);
                 float uppery = std::max(my, m1_my_press);
-                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", 0, 1};
+                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_x, shear_y};
             }
             else
-                tempregion = {0,0,0,0,"",0,0};
+                tempregion = {0,0,0,0,"",0,0,0,0};
         }
         else
-            tempregion = {0,0,0,0,"",0,0};
+            tempregion = {0,0,0,0,"",0,0,0,0};
         last_m1 = current_m1;
         
         
@@ -2793,7 +2849,7 @@ int main(int argc, char ** argv)
             myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
         
         }
-        if(currentsubtitle.initialized)
+        if(currentsubtitle.initialized and fontinitialized)
         {
             ////puts("bfr");
             uint32_t lastindex = 0;
@@ -2802,10 +2858,11 @@ int main(int argc, char ** argv)
             int ascent, descent, linegap;
             stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
             float actual_descent = descent*fontscale;
+            float actual_ascent = ascent*fontscale;
             float x = 0;
-            float y = myrenderer.h + actual_descent;
+            float y = myrenderer.h + actual_descent - 5;
             
-            myrenderer.draw_rect(0, myrenderer.h-(ascent-descent)*fontscale, myrenderer.w, myrenderer.h, 0, 0, 0, 0.5, true);
+            myrenderer.draw_rect(0, y - actual_ascent, myrenderer.w, myrenderer.h, 0, 0, 0, 0.5, true);
             
             int i = 0;
             for(auto c : currentsubtitle.codepoints)
