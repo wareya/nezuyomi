@@ -125,11 +125,9 @@ The OCR code
 
 OCR being basically external means that you can use **any** command line OCR system with Nezuyomi.
 
-Example using imagemagick and tesseract 4 on windows:
+Example using imagemagick and tesseract 4 on windows (tessearct.exe living in \<userdir>/.config/ネズヨミ/tess/):
 
     chcp 65001 | magick convert -alpha off -auto-level -resize $SCALE% -virtual-pixel white -distort AffineProjection 1,$YSHEAR,$XSHEAR,1,%[fx:h/2*-$XSHEAR],%[fx:w/2*-$YSHEAR] +repage -sigmoidal-contrast 5x50% -unsharp 0x3 -distort resize 50% -set units PixelsPerInch -density 600 $SCREENSHOT png:- | tess\tesseract.exe stdin stdout -l jpn_vert+jpn --psm 5 --oem 1 tess/config_jap.txt > "$OUTPUTFILE"
-
-
 
 ## compilation
 
