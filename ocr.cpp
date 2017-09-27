@@ -21,11 +21,13 @@ bool replace(std::string& str, const std::string& from, const std::string& to) {
 int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale, const char * xshear, const char * yshear)
 {
     auto f = wrap_fopen(commandfilename,  "rb");
+    if(!f) return 1;
     
     fseek(f, 0, SEEK_END);
     auto len = ftell(f);
     fseek(f, 0, SEEK_SET);
     char * data = (char *)malloc(len+1);
+    if(!data) return 1;
     fread(data, 1, len, f);
     data[len] = 0;
     fclose(f);
