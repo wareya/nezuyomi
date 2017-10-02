@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-#include <GL/gl3w.h>
+#include "include/GL/gl3w.h"
 #include <GLFW/glfw3.h>
 
 #include <stdio.h>
@@ -34,9 +34,10 @@ limitations under the License.
 #include "include/unifile.h"
 
 #ifdef _WIN32
-#include "include/dirent.h"
+#include "include/dirent_emulation.h"
 #else
 #include <dirent.h>
+#include <unistd.h>
 #endif
 
 #include <mutex>
@@ -99,7 +100,7 @@ struct conf_real {
 
 bool is_number(const std::string & string)
 {
-    try {stod(string);}
+    try {std::stod(string);}
     catch(const std::invalid_argument & e){ return false; }
     catch(const std::out_of_range & e){ return false; }
     return true;
@@ -555,7 +556,7 @@ struct renderer {
         {
             //jinctexture[i] = sin(float(i)*M_PI/4)*0.5+0.5;///(float(i)*M_PI/4)*0.5+0.5;
             if(i == 0) jinctexture[i] = 1.0;
-            else       jinctexture[i] = 2*std::cyl_bessel_j(1, float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
+            else       jinctexture[i] = 2*j1(float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
             
             if(i == 0) sinctexture[i] = 1.0;
             else       sinctexture[i] = sin(float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
@@ -698,12 +699,12 @@ struct renderer {
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
-            if(x < -radius || x > radius) return 0;\n\
+            if(x < -radius || x > radius) return 0.0;\n\
             return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         float sincwindow(float x, float radius)\n\
         {\n\
-            if(x < -radius || x > radius) return 0;\n\
+            if(x < -radius || x > radius) return 0.0;\n\
             return sinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         bool supersamplemode;\n\
@@ -863,7 +864,7 @@ struct renderer {
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
-            if(x < -radius || x > radius) return 0;\n\
+            if(x < -radius || x > radius) return 0.0;\n\
             return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         layout(location = 0) out vec4 fragColor;\n\
@@ -913,7 +914,7 @@ struct renderer {
         }\n\
         float jincwindow(float x, float radius)\n\
         {\n\
-            if(x < -radius || x > radius) return 0;\n\
+            if(x < -radius || x > radius) return 0.0;\n\
             return jinc(x) * cos(x*M_PI/2/radius);\n\
         }\n\
         layout(location = 0) out vec4 fragColor;\n\
@@ -1322,14 +1323,6 @@ struct renderer {
     }
 };
 
-std::wstring towstring(std::string mystring)
-{
-    size_t S = MultiByteToWideChar(CP_UTF8, 0, mystring.data(), -1, NULL, 0)*sizeof(wchar_t);
-    std::wstring W_S(S, L'#');
-    MultiByteToWideChar(CP_UTF8, 0, mystring.data(), -1, &W_S[0], S);
-    return W_S;
-}
-
 bool looks_like_image_filename(std::string string)
 {
     
@@ -1621,7 +1614,7 @@ std::string profile()
     
     #else
     
-    r = std::string("~");
+    std::string r = std::string("~");
     
     #endif
     
@@ -2145,7 +2138,13 @@ int wmain (int argc, wchar_t ** argv)
 
 int main(int argc, char ** argv)
 {
-    char * arg = argc[1];
+    if(argc < 2)
+    {
+        puts("Nezuyomi must be invoked with a png or jpeg image or a directory containing png and/or jpeg images. Drag one onto it or give it a command line argument.");
+        getchar();
+        return 0;
+    }
+    char * arg = argv[1];
     
     // store CWD
     std::string cwd;
@@ -2197,7 +2196,7 @@ int main(int argc, char ** argv)
     if(path.length() > 2 and (path[1] != ':' or path[2] != '\\'))
         path = cwd+path;
     #else
-    if(path.lenght() > 0 and path[0] != '/')
+    if(path.length() > 0 and path[0] != '/')
         path = cwd+path;
     #endif
     
