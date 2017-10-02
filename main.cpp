@@ -556,7 +556,11 @@ struct renderer {
         {
             //jinctexture[i] = sin(float(i)*M_PI/4)*0.5+0.5;///(float(i)*M_PI/4)*0.5+0.5;
             if(i == 0) jinctexture[i] = 1.0;
+            #ifdef _WIN32
+            else       jinctexture[i] = 2*std::cyl_bessel_j(1, float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
+            #else
             else       jinctexture[i] = 2*j1(float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
+            #endif
             
             if(i == 0) sinctexture[i] = 1.0;
             else       sinctexture[i] = sin(float(i*M_PI)/8)/(float(i*M_PI)/8)*0.5+0.5;
