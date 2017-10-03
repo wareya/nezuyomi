@@ -848,6 +848,10 @@ struct renderer {
                 supersamplemode = (usejinc != 0);\n\
                 fragColor =  supersamplegrid();\n\
             }\n\
+            else if(myScale.x == 1 && myScale.y == 1)\n\
+            {\n\
+                fragColor = texture2D(mytexture, myTexCoord);\n\
+            }\n\
             else\n\
             {\n\
                 vec2 phase = interpolationPhase();\n\
