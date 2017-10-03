@@ -39,6 +39,7 @@ One option per line. The supported options and defaults are:
     (speed, 2000)
     (scrollspeed, 100)
     (throttle, 0.004)
+    (fastgl, 0)
 
     (sharpenmode, "acuity")
     (fontname, "NotoSansCJKjp-Regular.otf")
