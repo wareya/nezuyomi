@@ -165,6 +165,7 @@ MAKEREAL(pgup_to_bottom, 1);
 MAKEREAL(speed, 2000);
 MAKEREAL(scrollspeed, 100);
 MAKEREAL(throttle, 0.004);
+MAKEREAL(fastgl, 0);
 
 #define MAKETEXT(X, Y) conf_text X(#X, Y)
 
@@ -220,7 +221,7 @@ struct renderer {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);//GL_LINEAR_MIPMAP_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             checkerr(__LINE__);
         }
         ~texture()
@@ -298,6 +299,66 @@ struct renderer {
             }\n"
             ;
             
+            checkerr(__LINE__);
+            vshader = glCreateShader(GL_VERTEX_SHADER);
+            glShaderSource(vshader, 1, &vshadersource, NULL);
+            glCompileShader(vshader);
+            checkerr(__LINE__);
+            
+            fshader = glCreateShader(GL_FRAGMENT_SHADER);
+            glShaderSource(fshader, 1, &fshadersource, NULL);
+            glCompileShader(fshader);
+            checkerr(__LINE__);
+            
+            program = glCreateProgram();
+            glAttachShader(program, vshader);
+            glAttachShader(program, fshader);
+            glLinkProgram(program);
+            checkerr(__LINE__);
+            
+            int v,f,p;
+            glGetShaderiv(vshader, GL_COMPILE_STATUS, &v);
+            glGetShaderiv(fshader, GL_COMPILE_STATUS, &f);
+            glGetProgramiv(program, GL_LINK_STATUS, &p);
+            checkerr(__LINE__);
+            if(!v or !f or !p)
+            {
+                char info[512];
+                puts("Failed to compile shader:");
+                puts(name);
+                if(!v)
+                {
+                    glGetShaderInfoLog(vshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!f)
+                {
+                    glGetShaderInfoLog(fshader, 512, NULL, info);
+                    puts(info);
+                }
+                if(!p)
+                {
+                    glGetProgramInfoLog(program, 512, NULL, info);
+                    puts(info);
+                }
+                exit(0);
+            }
+            
+            checkerr(__LINE__);
+            
+            glDeleteShader(vshader);
+            glDeleteShader(fshader);
+        }
+    };
+    
+    
+    struct genericprogram {
+        unsigned int program;
+        unsigned int fshader;
+        unsigned int vshader;
+        
+        genericprogram(const char * name, const char * vshadersource, const char * fshadersource)
+        {
             checkerr(__LINE__);
             vshader = glCreateShader(GL_VERTEX_SHADER);
             glShaderSource(vshader, 1, &vshadersource, NULL);
@@ -520,9 +581,6 @@ struct renderer {
     
     unsigned int VAO, VBO, RectVAO, RectVBO, FBO, FBOtexture1, FBOtexture2;
     int w, h;
-    unsigned int vshader;
-    unsigned int fshader;
-    unsigned int imageprogram;
     
     float jinctexture[512];
     float sinctexture[512];
@@ -531,6 +589,7 @@ struct renderer {
     float infoscale = 1.0;
     
     GLFWwindow * win;
+    genericprogram * imageprogram, * fastimageprogram;
     postprogram * copy, * sharpen, * nusharpen;
     rectprogram * primitive;
     textprogram * mytextprogram;
@@ -613,7 +672,8 @@ struct renderer {
         
         checkerr(__LINE__);
         
-        const char * vshadersource =
+        fastimageprogram = new genericprogram("fastimageprogram", 
+        
         "#version 330 core\n\
         uniform mat4 projection;\n\
         uniform mat4 translation;\n\
@@ -624,10 +684,36 @@ struct renderer {
         {\n\
             gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0) * translation * projection;\n\
             myTexCoord = aTex;\n\
-        }\n"
-        ;
+        }\n",
         
-        const char * fshadersource = 
+        "#version 330 core\n\
+        uniform sampler2D mytexture;\n\
+        in vec2 myTexCoord;\n\
+        layout(location = 0) out vec4 fragColor;\n\
+        void main()\n\
+        {\n\
+            fragColor = texture2D(mytexture, myTexCoord);\n\
+        }\n");
+        
+        glUseProgram(fastimageprogram->program);
+        glUniform1i(glGetUniformLocation(fastimageprogram->program, "mytexture"), 0);
+        
+        checkerr(__LINE__);
+        
+        imageprogram = new genericprogram("imageprogram", 
+        
+        "#version 330 core\n\
+        uniform mat4 projection;\n\
+        uniform mat4 translation;\n\
+        layout (location = 0) in vec3 aPos;\n\
+        layout (location = 1) in vec2 aTex;\n\
+        out vec2 myTexCoord;\n\
+        void main()\n\
+        {\n\
+            gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0) * translation * projection;\n\
+            myTexCoord = aTex;\n\
+        }\n", 
+        
         "#version 330 core\n\
         uniform sampler2D mytexture;\n\
         uniform sampler2D myJincLookup;\n\
@@ -768,63 +854,13 @@ struct renderer {
                 vec4 c = hermitegrid(phase.x, phase.y);\n\
                 fragColor = c;\n\
             }\n\
-        }\n"
-        ;
-        
+        }\n");
         checkerr(__LINE__);
         
-        vshader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vshader, 1, &vshadersource, NULL);
-        glCompileShader(vshader);
-        
-        fshader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fshader, 1, &fshadersource, NULL);
-        glCompileShader(fshader);
-        
-        imageprogram = glCreateProgram();
-        glAttachShader(imageprogram, vshader);
-        glAttachShader(imageprogram, fshader);
-        glLinkProgram(imageprogram);
-        
-        checkerr(__LINE__);
-        
-        int vsuccess, fsuccess, psuccess;
-        glGetShaderiv(vshader, GL_COMPILE_STATUS, &vsuccess);
-        glGetShaderiv(fshader, GL_COMPILE_STATUS, &fsuccess);
-        glGetProgramiv(imageprogram, GL_LINK_STATUS, &psuccess);
-        if(!vsuccess or !fsuccess or !psuccess)
-        {
-            char info[512];
-            puts("Failed to compile shader");
-            if(!vsuccess)
-            {
-                glGetShaderInfoLog(vshader, 512, NULL, info);
-                puts(info);
-            }
-            if(!fsuccess)
-            {
-                glGetShaderInfoLog(fshader, 512, NULL, info);
-                puts(info);
-            }
-            if(!psuccess)
-            {
-                glGetProgramInfoLog(imageprogram, 512, NULL, info);
-                puts(info);
-            }
-            
-            exit(0);
-        }
-        checkerr(__LINE__);
-        
-        glUseProgram(imageprogram);
-        glUniform1i(glGetUniformLocation(imageprogram, "mytexture"), 0);
-        glUniform1i(glGetUniformLocation(imageprogram, "myJincLookup"), 1);
-        glUniform1i(glGetUniformLocation(imageprogram, "mySincLookup"), 2);
-        
-        checkerr(__LINE__);
-        
-        glDeleteShader(fshader);
-        glDeleteShader(vshader);
+        glUseProgram(imageprogram->program);
+        glUniform1i(glGetUniformLocation(imageprogram->program, "mytexture"), 0);
+        glUniform1i(glGetUniformLocation(imageprogram->program, "myJincLookup"), 1);
+        glUniform1i(glGetUniformLocation(imageprogram->program, "mySincLookup"), 2);
         
         checkerr(__LINE__);
         
@@ -1080,13 +1116,23 @@ struct renderer {
             0.0f,    0.0f, 0.0f, 1.0f
         };
         
-        glUseProgram(imageprogram);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, FBO);
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        if(fastgl)
+        {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glDrawBuffer(GL_BACK);
+            glUseProgram(fastimageprogram->program);
+            glUniformMatrix4fv(glGetUniformLocation(fastimageprogram->program, "projection"), 1, 0, projection);
+        }
+        else
+        {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, FBO);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glUseProgram(imageprogram->program);
+            glUniformMatrix4fv(glGetUniformLocation(imageprogram->program, "projection"), 1, 0, projection);
+        }
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
         
-        glUniformMatrix4fv(glGetUniformLocation(imageprogram, "projection"), 1, 0, projection);
         
         glUseProgram(primitive->program);
         glUniformMatrix4fv(glGetUniformLocation(primitive->program, "projection"), 1, 0, projection);
@@ -1102,6 +1148,8 @@ struct renderer {
     }
     void cycle_post()
     {
+        if(fastgl) return;
+        
         checkerr(__LINE__);
         glBindVertexArray(VAO);
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -1247,6 +1295,50 @@ struct renderer {
         
         glEnable(GL_DEPTH_TEST);
     }
+    void draw_quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, float r, float g, float b, float a, bool nocamera = false)
+    {
+        glDisable(GL_DEPTH_TEST);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
+        checkerr(__LINE__);
+        glUseProgram(primitive->program);
+        glBindVertexArray(RectVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
+        checkerr(__LINE__);
+        
+        if(!nocamera)
+        {
+            x1 = x1*cam_scale-cam_x;
+            y1 = y1*cam_scale-cam_y;
+            x2 = x2*cam_scale-cam_x;
+            y2 = y2*cam_scale-cam_y;
+            x3 = x3*cam_scale-cam_x;
+            y3 = y3*cam_scale-cam_y;
+            x4 = x4*cam_scale-cam_x;
+            y4 = y4*cam_scale-cam_y;
+        }
+        
+        const colorvertex vertices[] = {
+            {x1, y1, 0.0f, r, g, b, a},
+            {x2, y2, 0.0f, r, g, b, a},
+            {x3, y3, 0.0f, r, g, b, a},
+            {x4, y4, 0.0f, r, g, b, a}
+        };
+        
+        float translation[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 1.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        glUniformMatrix4fv(glGetUniformLocation(primitive->program, "translation"), 1, 0, translation);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        checkerr(__LINE__);
+        
+        glEnable(GL_DEPTH_TEST);
+    }
     void draw_texture(texture * texture, float x, float y, float z)
     {
         if(!texture)
@@ -1255,10 +1347,6 @@ struct renderer {
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
         
-        checkerr(__LINE__);
-        glUseProgram(imageprogram);
-        glBindVertexArray(VAO);
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
         checkerr(__LINE__);
         
         float w = float(texture->w);
@@ -1277,16 +1365,31 @@ struct renderer {
                  0.0f,      0.0f, 1.0f,    z,
                  0.0f,      0.0f, 0.0f, 1.0f
         };
-        
-        glUniformMatrix4fv(glGetUniformLocation(imageprogram, "translation"), 1, 0, translation);
-        glUniform2f(glGetUniformLocation(imageprogram, "mySize"), w, h);
-        glUniform2f(glGetUniformLocation(imageprogram, "myScale"), cam_scale, cam_scale);
-        glUniform1i(glGetUniformLocation(imageprogram, "usejinc"), usejinc);
-        glUniform1f(glGetUniformLocation(imageprogram, "myradius"), downscaleradius);
-        glBindTexture(GL_TEXTURE_2D, texture->texid);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        checkerr(__LINE__);
+        glBindVertexArray(VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        if(fastgl)
+        {
+            glUseProgram(fastimageprogram->program);
+            glUniformMatrix4fv(glGetUniformLocation(fastimageprogram->program, "translation"), 1, 0, translation);
+            glBindTexture(GL_TEXTURE_2D, texture->texid);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        }
+        else
+        {
+            glUseProgram(imageprogram->program);
+            checkerr(__LINE__);
+            
+            glUniformMatrix4fv(glGetUniformLocation(imageprogram->program, "translation"), 1, 0, translation);
+            glUniform2f(glGetUniformLocation(imageprogram->program, "mySize"), w, h);
+            glUniform2f(glGetUniformLocation(imageprogram->program, "myScale"), cam_scale, cam_scale);
+            glUniform1i(glGetUniformLocation(imageprogram->program, "usejinc"), usejinc);
+            glUniform1f(glGetUniformLocation(imageprogram->program, "myradius"), downscaleradius);
+            glBindTexture(GL_TEXTURE_2D, texture->texid);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,  GL_DYNAMIC_DRAW);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            checkerr(__LINE__);
+        }
     }
     void draw_text_texture(texture * texture, float x, float y, float z)
     {
@@ -2538,6 +2641,9 @@ int main(int argc, char ** argv)
                     if(shear_x < 0)
                         about = "% (pushes top edge rightwards)";
                     currentsubtitle = subtitle(std::string("set x axis shear for OCR to ")+std::to_string((int)(shear_x))+about, 24, &myrenderer);
+                    
+                    if(currentregion and currentregion->text == "")
+                        currentregion->xskew = shear_x;
                 }
                 else if(shiftpressed and !altpressed and ctrlpressed)
                 {
@@ -2550,6 +2656,9 @@ int main(int argc, char ** argv)
                     if(shear_y < 0)
                         about = "% (pushes right edge upwards)";
                     currentsubtitle = subtitle(std::string("set y axis shear for OCR to ")+std::to_string((int)(shear_y))+about, 24, &myrenderer);
+                    
+                    if(currentregion and currentregion->text == "")
+                        currentregion->yskew = shear_y;
                 }
                 else if(altpressed and ctrlpressed)
                 {
@@ -2726,6 +2835,8 @@ int main(int argc, char ** argv)
                     currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
                     
                     currentregion = &(regions[regions.size()-1]);
+                    currentregion->xskew = shear_x;
+                    currentregion->yskew = shear_y;
                     
                     tempregion = {0,0,0,0,"",0,0,0,0};
                 }
@@ -2742,6 +2853,8 @@ int main(int argc, char ** argv)
                 float lowery = std::min(my, m1_my_press);
                 float uppery = std::max(my, m1_my_press);
                 tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_x, shear_y};
+                tempregion.xskew = shear_x;
+                tempregion.yskew = shear_y;
             }
             else
                 tempregion = {0,0,0,0,"",0,0,0,0};
@@ -2834,23 +2947,138 @@ int main(int argc, char ** argv)
         
         for(region r : regions)
         {
-            //myrenderer.draw_rect(x1, y1, x2, y2, 0.2, 0.8, 1.0, 0.5);
-            //myrenderer.draw_rect(r.x1, r.y1, r.x2, r.y2, 0.2, 0.8, 1.0, 0.5);
-            float p = 1/scale;
-            myrenderer.draw_rect(r.x1-p, r.y1-p, r.x2-p, r.y1+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x1-p, r.y1+p, r.x1+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
+            if(r.xskew == 0 and r.yskew == 0)
+            {
+                double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
+                double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
+                double x2 = (r.x2*myrenderer.cam_scale-myrenderer.cam_x);
+                double y2 = (r.y2*myrenderer.cam_scale-myrenderer.cam_y);
+                myrenderer.draw_rect(x1-1, y1-1, x2-1, y1+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x1-1, y1+1, x1+1, y2+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x1+1, y2-1, x2+1, y2+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x2-1, y1-1, x2+1, y2-1, 0.2, 0.8, 1.0, 0.5, true);
+            }
+            else
+            {
+                std::vector<double> xlist;
+                std::vector<double> ylist;
+                
+                double x1 = r.x1 - r.xskew*0.01*(r.y1-r.y2)/2;
+                double y1 = r.y1 - r.yskew*0.01*(r.x1-r.x2)/2;
+                
+                double x2 = r.x2 - r.xskew*0.01*(r.y1-r.y2)/2;
+                double y2 = r.y1 - r.yskew*0.01*(r.x2-r.x1)/2;
+                
+                double x3 = r.x1 - r.xskew*0.01*(r.y2-r.y1)/2;
+                double y3 = r.y2 - r.yskew*0.01*(r.x1-r.x2)/2;
+                
+                double x4 = r.x2 - r.xskew*0.01*(r.y2-r.y1)/2;
+                double y4 = r.y2 - r.yskew*0.01*(r.x2-r.x1)/2;
+                
+                xlist.push_back(x1);
+                xlist.push_back((x1+x2)/2);
+                xlist.push_back(x2);
+                xlist.push_back((x1+x3)/2);
+                xlist.push_back((x1+x2+x3+x4)/4);
+                xlist.push_back((x2+x4)/2);
+                xlist.push_back(x3);
+                xlist.push_back((x3+x4)/2);
+                xlist.push_back(x4);
+                
+                ylist.push_back(y1);
+                ylist.push_back((y1+y2)/2);
+                ylist.push_back(y2);
+                ylist.push_back((y1+y3)/2);
+                ylist.push_back((y1+y2+y3+y4)/4);
+                ylist.push_back((y2+y4)/2);
+                ylist.push_back(y3);
+                ylist.push_back((y3+y4)/2);
+                ylist.push_back(y4);
+                
+                for(auto& val : xlist)
+                {
+                    if(val < r.x1) val = r.x1;
+                    if(val > r.x2) val = r.x2;
+                }
+                for(auto& val : ylist)
+                {
+                    if(val < r.y1) val = r.y1;
+                    if(val > r.y2) val = r.y2;
+                }
+                
+                myrenderer.draw_quad(xlist[0], ylist[0], xlist[1], ylist[1], xlist[3], ylist[3], xlist[4], ylist[4], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[1], ylist[1], xlist[2], ylist[2], xlist[4], ylist[4], xlist[5], ylist[5], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[3], ylist[3], xlist[4], ylist[4], xlist[6], ylist[6], xlist[7], ylist[7], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[4], ylist[4], xlist[5], ylist[5], xlist[7], ylist[7], xlist[8], ylist[8], 0.2, 0.8, 1.0, 0.5);
+            }
         }
         // with tempregion too
         {
             auto & r = tempregion;
-            float p = 1/scale;
-            myrenderer.draw_rect(r.x1-p, r.y1-p, r.x2-p, r.y1+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x1-p, r.y1+p, r.x1+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x1+p, r.y2-p, r.x2+p, r.y2+p, 0.2, 0.8, 1.0, 0.5);
-            myrenderer.draw_rect(r.x2-p, r.y1-p, r.x2+p, r.y2-p, 0.2, 0.8, 1.0, 0.5);
-        
+            if(r.xskew == 0 and r.yskew == 0)
+            {
+                double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
+                double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
+                double x2 = (r.x2*myrenderer.cam_scale-myrenderer.cam_x);
+                double y2 = (r.y2*myrenderer.cam_scale-myrenderer.cam_y);
+                myrenderer.draw_rect(x1-1, y1-1, x2-1, y1+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x1-1, y1+1, x1+1, y2+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x1+1, y2-1, x2+1, y2+1, 0.2, 0.8, 1.0, 0.5, true);
+                myrenderer.draw_rect(x2-1, y1-1, x2+1, y2-1, 0.2, 0.8, 1.0, 0.5, true);
+            }
+            else
+            {
+                std::vector<double> xlist;
+                std::vector<double> ylist;
+                
+                double x1 = r.x1 - r.xskew*0.01*(r.y1-r.y2)/2;
+                double y1 = r.y1 - r.yskew*0.01*(r.x1-r.x2)/2;
+                
+                double x2 = r.x2 - r.xskew*0.01*(r.y1-r.y2)/2;
+                double y2 = r.y1 - r.yskew*0.01*(r.x2-r.x1)/2;
+                
+                double x3 = r.x1 - r.xskew*0.01*(r.y2-r.y1)/2;
+                double y3 = r.y2 - r.yskew*0.01*(r.x1-r.x2)/2;
+                
+                double x4 = r.x2 - r.xskew*0.01*(r.y2-r.y1)/2;
+                double y4 = r.y2 - r.yskew*0.01*(r.x2-r.x1)/2;
+                
+                xlist.push_back(x1);
+                xlist.push_back((x1+x2)/2);
+                xlist.push_back(x2);
+                xlist.push_back((x1+x3)/2);
+                xlist.push_back((x1+x2+x3+x4)/4);
+                xlist.push_back((x2+x4)/2);
+                xlist.push_back(x3);
+                xlist.push_back((x3+x4)/2);
+                xlist.push_back(x4);
+                
+                ylist.push_back(y1);
+                ylist.push_back((y1+y2)/2);
+                ylist.push_back(y2);
+                ylist.push_back((y1+y3)/2);
+                ylist.push_back((y1+y2+y3+y4)/4);
+                ylist.push_back((y2+y4)/2);
+                ylist.push_back(y3);
+                ylist.push_back((y3+y4)/2);
+                ylist.push_back(y4);
+                
+                for(auto& val : xlist)
+                {
+                    if(val < r.x1) val = r.x1;
+                    if(val > r.x2) val = r.x2;
+                }
+                for(auto& val : ylist)
+                {
+                    if(val < r.y1) val = r.y1;
+                    if(val > r.y2) val = r.y2;
+                }
+                
+                myrenderer.draw_quad(xlist[0], ylist[0], xlist[1], ylist[1], xlist[3], ylist[3], xlist[4], ylist[4], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[1], ylist[1], xlist[2], ylist[2], xlist[4], ylist[4], xlist[5], ylist[5], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[3], ylist[3], xlist[4], ylist[4], xlist[6], ylist[6], xlist[7], ylist[7], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.draw_quad(xlist[4], ylist[4], xlist[5], ylist[5], xlist[7], ylist[7], xlist[8], ylist[8], 0.2, 0.8, 1.0, 0.5);
+            }
         }
         if(currentsubtitle.initialized and fontinitialized)
         {
