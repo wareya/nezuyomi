@@ -214,7 +214,7 @@ struct renderer {
             
             checkerr(__LINE__);
             puts("Generating mipmaps");
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
+            //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
             glGenerateMipmap(GL_TEXTURE_2D);
             puts("Done generating mipmaps");
             checkerr(__LINE__);
@@ -1721,7 +1721,8 @@ std::string profile()
     
     #else
     
-    std::string r = std::string("~");
+    char * profile = getenv("HOME");
+    std::string r = std::string(profile);
     
     #endif
     
@@ -2275,6 +2276,7 @@ int main(int argc, char ** argv)
     bool chwd_success = false;
     {
         std::string profdir = profile()+".config/ネズヨミ/";
+        puts(profdir.data());
         int status = chdir(profdir.data());
         if(status == 0)
             chwd_success = true;
