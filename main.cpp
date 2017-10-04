@@ -1733,19 +1733,55 @@ std::string profile()
     if(r.length() > 0)
         r += "/";
     
+    #ifdef _WIN32
+    r += "ネズヨミ/";
+    #else
+    r += ".config/ネズヨミ/";
+    #endif
+    
     return r;
 }
 
-// "/.config/ネズヨミ/config.txt"
 FILE * profile_fopen(const char * fname, const char * mode)
 {
     auto path = profile() + fname;
     return wrap_fopen(path.data(), mode);
 }
 
+void config_hook(const std::string & name, value val)
+{
+    if(name == "sharpenmode")
+    {
+        if(val.text == "acuity")
+        {
+            sharpenmode = "acuity";
+            sharpradius1 = 2.0;
+            sharpradius2 = 6.0;
+            sharpblur1 = 0.5;
+            sharpblur2 = 6.0;
+            sharphardness1 = -0.5;
+            sharphardness2 = +0.25;
+            if(usesharpen)
+                puts("Edge enhancement set to 'acuity' (for upscaling)");
+        }
+        else if(val.text == "deartifact")
+        {
+            sharpenmode = "deartifact";
+            sharpradius1 = 4.0;
+            sharpradius2 = 8.0;
+            sharpblur1 = sqrt(0.5);
+            sharpblur2 = sqrt(0.5);
+            sharphardness1 = -1.5;
+            sharphardness2 = +1.5;
+            if(usesharpen)
+                puts("Edge enhancement set to 'deartifact' (for downscaling)");
+        }
+    }
+}
+
 void load_config()
 {
-    auto f = profile_fopen(".config/ネズヨミ/config.txt", "rb");
+    auto f = profile_fopen("config.txt", "rb");
     if(!f)
     {
         puts("could not open config file");
@@ -1767,6 +1803,8 @@ void load_config()
         const std::string second = str.substr(end);
         
         config[first] = {double_from_string(second), second, is_number(second)};
+        
+        config_hook(first, config[first]);
     }
     
     fclose(f);
@@ -1778,7 +1816,7 @@ uint8_t * fontbuffer;
 
 void init_font()
 {
-    auto fontfile = profile_fopen((".config/ネズヨミ/"+std::string(fontname)).data(), "rb");
+    auto fontfile = profile_fopen((std::string(fontname)).data(), "rb");
     if(!fontfile)
     {
         puts("failed to open font file");
@@ -1939,11 +1977,11 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
     regions = {};
     if(folder.length() > 0)
         folder[folder.length()-1] = '_';
-    auto f = profile_fopen((".config/ネズヨミ/region_"+folder+filename+".txt").data(), "rb");
+    auto f = profile_fopen(("region_"+folder+filename+".txt").data(), "rb");
     if(!f)
     {
         //puts("couldn't open file");
-        //puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
+        //puts(("region_"+folder+filename+".txt").data());
         return;
     }
     //puts("loading regions for");
@@ -2036,11 +2074,11 @@ void write_regions(std::string folder, std::string filename, int width, int heig
 {
     if(folder.length() > 0)
         folder[folder.length()-1] = '_';
-    auto f = profile_fopen((".config/ネズヨミ/region_"+folder+filename+".txt").data(), "wb");
+    auto f = profile_fopen(("region_"+folder+filename+".txt").data(), "wb");
     if(!f)
     {
         puts("couldn't open file");
-        puts((".config/ネズヨミ/region_"+folder+filename+".txt").data());
+        puts(("/region_"+folder+filename+".txt").data());
         return;
     }
     //puts("writing regions for");
@@ -2234,7 +2272,7 @@ int wmain (int argc, wchar_t ** argv)
     
     bool chwd_success = false;
     {
-        std::string profdir = profile()+".config/ネズヨミ/";
+        std::string profdir = profile()+"";
         int status;
         uint16_t * profdir_w = utf8_to_utf16((uint8_t *)profdir.data(), &status);
         if(profdir_w)
@@ -2279,7 +2317,7 @@ int main(int argc, char ** argv)
     
     bool chwd_success = false;
     {
-        std::string profdir = profile()+".config/ネズヨミ/";
+        std::string profdir = profile()+"";
         puts(profdir.data());
         int status = chdir(profdir.data());
         if(status == 0)
@@ -2748,7 +2786,7 @@ int main(int argc, char ** argv)
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h);
                         
                         puts("writing cropped image to disk");
-                        auto f = wrap_fopen((profile()+".config/ネズヨミ/temp_ocr.png").data(), "wb");
+                        auto f = wrap_fopen((profile()+"temp_ocr.png").data(), "wb");
                         if(f)
                         {
                             stbi_write_png_to_func([](void * file, void * data, int size){
@@ -2759,8 +2797,8 @@ int main(int argc, char ** argv)
                         free(data);
                         puts("done");
                         
-                        puts((profile()+".config/ネズヨミ/temp_ocr.png").data());
-                        puts((profile()+".config/ネズヨミ/ocr.txt").data());
+                        puts((profile()+"temp_ocr.png").data());
+                        puts((profile()+"ocr.txt").data());
                         
                         r.pixel_scale = textscale;
                         r.xskew = shear_x;
@@ -2774,15 +2812,15 @@ int main(int argc, char ** argv)
                         std::string ocrfile;
                         
                         if(ocrmode == 1)
-                            ocrfile = (profile()+".config/ネズヨミ/ocr2.txt");
+                            ocrfile = (profile()+"ocr2.txt");
                         else if(ocrmode == 2)
-                            ocrfile = (profile()+".config/ネズヨミ/ocr3.txt");
+                            ocrfile = (profile()+"ocr3.txt");
                         else
-                            ocrfile = (profile()+".config/ネズヨミ/ocr.txt");
+                            ocrfile = (profile()+"ocr.txt");
                         
-                        ocr((profile()+".config/ネズヨミ/temp_ocr.png").data(), ocrfile.data(), (profile()+".config/ネズヨミ/temp_text.txt").data(), (scale_double_percent.data()), xshear_string.data(), yshear_string.data());
+                        ocr((profile()+"temp_ocr.png").data(), ocrfile.data(), (profile()+"temp_text.txt").data(), (scale_double_percent.data()), xshear_string.data(), yshear_string.data());
                         
-                        auto f2 = wrap_fopen((profile()+".config/ネズヨミ/temp_text.txt").data(), "rb");
+                        auto f2 = wrap_fopen((profile()+"temp_text.txt").data(), "rb");
                         if(f2)
                         {
                             fseek(f2, 0, SEEK_END);
