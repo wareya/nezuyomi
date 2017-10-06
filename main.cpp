@@ -3177,7 +3177,7 @@ int main(int argc, char ** argv)
             float x = 0;
             float y = myrenderer.h + actual_descent - 5;
             
-            myrenderer.draw_rect(0, y - actual_ascent, myrenderer.w, myrenderer.h, 0, 0, 0, 0.5, true);
+            myrenderer.draw_rect(0, y - actual_ascent, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
             
             int i = 0;
             for(auto c : currentsubtitle.codepoints)
