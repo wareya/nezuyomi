@@ -46,6 +46,7 @@ limitations under the License.
 #include <vector>
 #include <map>
 #include <string>
+#include <algorithm>
 
 #include <iostream>
 #include <fstream>
@@ -2454,6 +2455,44 @@ int main(int argc, char ** argv)
     // we are now done operating with the filesystem!
     
     if(mydir.size() == 0) return 0;
+    
+    std::sort(mydir.begin(), mydir.end(), [](std::string a, std::string b) {
+        auto numeric = [](const char & c) {return (c >= '0' and c <= '9');};
+        size_t i;
+        for(i = 0; i < a.length() and i < b.length() and a[i] == b[i]; i++);
+        // same length, identical
+        if(i == a.length() and i == b.length())
+            return false;
+        // ran out of length before a difference
+        if(i < a.length() and i >= b.length())
+            return false;
+        if(i < b.length() and i >= a.length())
+            return true;
+        char c1 = a[i];
+        char c2 = b[i];
+        if(c1 == 0)
+            return true;
+        if(c2 == 0)
+            return false;
+        // difference is not numeric
+        if(!numeric(c1) and !numeric(c2))
+            return c1 < c2;
+        
+        size_t start;
+        if(i > 0 and numeric(a[i-1]))
+            start = i-1;
+        else
+            start = i;
+        
+        size_t end1, end2;
+        for(end1 = 0; start+end1 < a.length() and numeric(a[start+end1]); end1++);
+        for(end2 = 0; start+end2 < b.length() and numeric(b[start+end2]); end2++);
+        if(end1 == 0 or end2 == 0) return c1 < c2;
+        
+        int num1 = std::stoi(a.substr(start, end1));
+        int num2 = std::stoi(b.substr(start, end2));
+        return (num1 < num2);
+    });
     
     int index = 0;
     if(from_filename)
