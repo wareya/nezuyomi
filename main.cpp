@@ -1453,6 +1453,41 @@ bool looks_like_image_filename(std::string string)
 }
 
 
+void config_hook(const std::string & name, value val)
+{
+    if(name == "sharpenmode")
+    {
+        if(val.text == "acuity")
+        {
+            sharpenmode = "acuity";
+            sharpradius1 = 2.0;
+            sharpradius2 = 6.0;
+            sharpblur1 = 0.5;
+            sharpblur2 = 6.0;
+            sharphardness1 = -0.5;
+            sharphardness2 = +0.25;
+            if(usesharpen)
+                puts("Edge enhancement set to 'acuity' (for upscaling)");
+        }
+        else if(val.text == "deartifact")
+        {
+            sharpenmode = "deartifact";
+            sharpradius1 = 4.0;
+            sharpradius2 = 8.0;
+            sharpblur1 = sqrt(0.5);
+            sharpblur2 = sqrt(0.5);
+            sharphardness1 = -1.5;
+            sharphardness2 = +1.5;
+            if(usesharpen)
+                puts("Edge enhancement set to 'deartifact' (for downscaling)");
+        }
+    }
+}
+void config_hook(const std::string & name, std::string text)
+{
+    config_hook(name, {double_from_string(text), text, false});
+}
+
 std::mutex scrollMutex;
 float scroll = 0;
 
@@ -1733,37 +1768,6 @@ FILE * profile_fopen(const char * fname, const char * mode)
 {
     auto path = profile() + fname;
     return wrap_fopen(path.data(), mode);
-}
-
-void config_hook(const std::string & name, value val)
-{
-    if(name == "sharpenmode")
-    {
-        if(val.text == "acuity")
-        {
-            sharpenmode = "acuity";
-            sharpradius1 = 2.0;
-            sharpradius2 = 6.0;
-            sharpblur1 = 0.5;
-            sharpblur2 = 6.0;
-            sharphardness1 = -0.5;
-            sharphardness2 = +0.25;
-            if(usesharpen)
-                puts("Edge enhancement set to 'acuity' (for upscaling)");
-        }
-        else if(val.text == "deartifact")
-        {
-            sharpenmode = "deartifact";
-            sharpradius1 = 4.0;
-            sharpradius2 = 8.0;
-            sharpblur1 = sqrt(0.5);
-            sharpblur2 = sqrt(0.5);
-            sharphardness1 = -1.5;
-            sharphardness2 = +1.5;
-            if(usesharpen)
-                puts("Edge enhancement set to 'deartifact' (for downscaling)");
-        }
-    }
 }
 
 void load_config()
