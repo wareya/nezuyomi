@@ -2479,9 +2479,20 @@ int main(int argc, char ** argv)
         for(end2 = 0; start+end2 < b.length() and numeric(b[start+end2]); end2++);
         if(end1 == 0 or end2 == 0) return c1 < c2;
         
-        int num1 = std::stoi(a.substr(start, end1));
-        int num2 = std::stoi(b.substr(start, end2));
-        return (num1 < num2);
+        try
+        {
+            int num1 = std::stoll(a.substr(start, end1));
+            int num2 = std::stoll(b.substr(start, end2));
+            return (num1 < num2);
+        }
+        catch(const std::invalid_argument & e)
+        {
+            return c1 < c2;
+        }
+        catch(const std::out_of_range & e)
+        {
+            return c1 < c2;
+        }
     });
     
     int index = 0;
