@@ -3,7 +3,7 @@ Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
 **If you want to use OCR you have to read the readme to know how to set it up.**
 
-Nezuyomi requires OpenGL 3.3 or greater and a C++17 compiler. **Nezuyomi is experimental.**
+Nezuyomi requires OpenGL 3.3 or greater. **Nezuyomi is experimental.**
 
 Compilation instructions at bottom of readme.
 
@@ -13,13 +13,11 @@ Drag-drop an image or folder onto the executable, or invoke it on the command li
 
 If images are added or deleted during operation, this won't be noticed.
 
-File ordering is unspecified. On my system, the filenames 1.png 10.png 2.png sort in that order instead of 1.png 2.png 10.png.
-
-Nezuyomi tries to read from ~/.config/ネズヨミ/\<stuff>. If this folder doesn't exist, various functions won't work properly. Nezuyomi will create this folder on launch once I know that it looks for it correctly.
+Nezuyomi tries to read and write to the folder C:/Users/\<username>/ネズヨミ/ on windows, and to ~/.config/ネズヨミ/ on unix. Nezuyomi does not create this folder right now. You have to create it manually. This folder will be called PROFILE.
 
 ## config
 
-Create ~/.config/ネズヨミ/config.txt
+Create PROFILE/config.txt
 
 The format looks like this:
 
@@ -44,9 +42,7 @@ One option per line. The supported options and defaults are:
     (sharpenmode, "acuity")
     (fontname, "NotoSansCJKjp-Regular.otf")
 
-(sharpenmode does not actually work as an option at this time)
-
-The font is loaded from ~/.config/ネズヨミ/\<fontname> **and needs to be installed manually**.
+The font is loaded from PROFILE/\<font name> **and needs to be installed manually**.
 
 ## controls
 
@@ -76,7 +72,7 @@ Arrows or EWDF (like WASD) to pan. Or scroll wheel. It's EWDF instead of WASD fo
 
 ## OCR and OCR controls
 
-Create the directory \<userdir>/.config/ネズヨミ/ -- \<userdir> is ~ or /home/\<username>/ on *nix and C:\Users\\<username>\ on windows.
+Create the directory PROFILE/. This is /home/\<username>/.config/ネズヨミ/ on unix and C:/Users/\<username>/ネズヨミ/ on windows.
 
 controls:
 
@@ -86,7 +82,7 @@ mouse1 click: OCR a region. does not re-OCR it if it already has associated text
 
 mouse2 click: Delete a region.
 
-The region list is saved to \<userdir>/.config/ネズヨミ/region_\<identifier_for_folder_and_filename>.txt
+The region list is saved to PROFILE/region_\<an identifier based on folder and filename>.txt
 
 z, x, c: Change OCR scripts. ocr.txt, ocr2.txt, ocr3.txt
 
@@ -108,17 +104,17 @@ The OCR code
 
 - crops the region,
 
-- writes it to \<userdir>/.config/ネズヨミ/**temp_ocr.png**,
+- writes it to PROFILE/ネズヨミ/**temp_ocr.png**,
 
-- and runs \<userdir>/.config/ネズヨミ/**ocr.txt** through system()
+- and runs PROFILE/**ocr.txt** through system()
 
-- after replacing **$SCREENSHOT** with \<userdir>/.config/ネズヨミ/**temp_ocr.png**
+- after replacing **$SCREENSHOT** with PROFILE/**temp_ocr.png**
 
-- and **$OUTPUTFILE** with \<userdir>/.config/ネズヨミ/**temp_text.txt**.
+- and **$OUTPUTFILE** with PROFILE/**temp_text.txt**.
 
 - and some other variables (**$SCALE**, **$XSHEAR**, **$YSHEAR**)
 
-- Nezuyomi then reads \<userdir>/.config/ネズヨミ/**temp_text.txt**,
+- Nezuyomi then reads PROFILE/**temp_text.txt**,
 
 - assigns the contents to the given region,
 
@@ -126,7 +122,7 @@ The OCR code
 
 OCR being basically external means that you can use **any** command line OCR system with Nezuyomi.
 
-Example using imagemagick and tesseract 4 on windows (tessearct.exe living in \<userdir>/.config/ネズヨミ/tess/):
+Example using imagemagick and tesseract 4 on windows (tessearct.exe living in PROFILE/tess/):
 
     chcp 65001 | magick convert -alpha off -auto-level -resize $SCALE% -virtual-pixel white -distort AffineProjection 1,$YSHEAR,$XSHEAR,1,%[fx:h/2*-$XSHEAR],%[fx:w/2*-$YSHEAR] +repage -sigmoidal-contrast 5x50% -unsharp 0x3 -distort resize 50% -set units PixelsPerInch -density 600 $SCREENSHOT png:- | tess\tesseract.exe stdin stdout -l jpn_vert+jpn --psm 5 --oem 1 tess/config_jap.txt > "$OUTPUTFILE"
 
@@ -134,4 +130,4 @@ Example using imagemagick and tesseract 4 on windows (tessearct.exe living in \<
 
 Windows: download and extract GLFW's .a and .dll files to depends/. Run compile.sh from a mingw environment. **Nezuyomi requires a C++17 compiler.**
 
-Linux: rewrite compile.sh to link GLFW from your package manager instead of the depends/ directory. Remove -mwindows and -mconsole. Nezuyomi doesn't do anything windows-specific. Good luck.
+Linux: rewrite compile-freebsd.sh to make up for differences between FreeBSD and Linux. Nezuyomi doesn't do anything windows-specific. Good luck.
