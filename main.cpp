@@ -1542,26 +1542,12 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
         if(key == GLFW_KEY_N)
         {
             usesharpen = 1;
-            sharpenmode = "acuity";
-            sharpradius1 = 2.0;
-            sharpradius2 = 6.0;
-            sharpblur1 = 0.5;
-            sharpblur2 = 6.0;
-            sharphardness1 = -0.5;
-            sharphardness2 = +0.25;
-            puts("Edge enhancement set to 'acuity' (for upscaling)");
+            config_hook("sharpenmode", "acuity");
         }
         if(key == GLFW_KEY_M)
         {
             usesharpen = 1;
-            sharpenmode = "deartifact";
-            sharpradius1 = 4.0;
-            sharpradius2 = 8.0;
-            sharpblur1 = sqrt(0.5);
-            sharpblur2 = sqrt(0.5);
-            sharphardness1 = -1.5;
-            sharphardness2 = +1.5;
-            puts("Edge enhancement set to 'deartifact' (for downscaling)");
+            config_hook("sharpenmode", "deartifact");
         }
         if(key == GLFW_KEY_S)
         {
