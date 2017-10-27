@@ -2715,8 +2715,16 @@ int main(int argc, char ** argv)
         static int last_pressing_z = pressing_z;
         if(pressing_z and !last_pressing_z)
         {
-            ocrmode = 0;
-            currentsubtitle = subtitle("ocr set to mode 1 (ocr.txt)", 24, &myrenderer);
+            if(glfwGetKey(win, GLFW_KEY_LEFT_ALT))
+            {
+                ocrmode = 3;
+                currentsubtitle = subtitle("ocr set to mode 4 (ocr4.txt)", 24, &myrenderer);
+            }
+            else
+            {
+                ocrmode = 0;
+                currentsubtitle = subtitle("ocr set to mode 1 (ocr.txt)", 24, &myrenderer);
+            }
         }
         last_pressing_z = pressing_z;
         
@@ -2724,8 +2732,16 @@ int main(int argc, char ** argv)
         static int last_pressing_x = pressing_x;
         if(pressing_x and !last_pressing_x)
         {
-            ocrmode = 1;
-            currentsubtitle = subtitle("ocr set to mode 2 (ocr2.txt)", 24, &myrenderer);
+            if(glfwGetKey(win, GLFW_KEY_LEFT_ALT))
+            {
+                ocrmode = 4;
+                currentsubtitle = subtitle("ocr set to mode 5 (ocr5.txt)", 24, &myrenderer);
+            }
+            else
+            {
+                ocrmode = 1;
+                currentsubtitle = subtitle("ocr set to mode 2 (ocr2.txt)", 24, &myrenderer);
+            }
         }
         last_pressing_x = pressing_x;
         
@@ -2733,8 +2749,16 @@ int main(int argc, char ** argv)
         static int last_pressing_c = pressing_c;
         if(pressing_c and !last_pressing_c)
         {
-            ocrmode = 2;
-            currentsubtitle = subtitle("ocr set to mode 3 (ocr3.txt)", 24, &myrenderer);
+            if(glfwGetKey(win, GLFW_KEY_LEFT_ALT))
+            {
+                ocrmode = 5;
+                currentsubtitle = subtitle("ocr set to mode 6 (ocr6.txt)", 24, &myrenderer);
+            }
+            else
+            {
+                ocrmode = 2;
+                currentsubtitle = subtitle("ocr set to mode 3 (ocr3.txt)", 24, &myrenderer);
+            }
         }
         last_pressing_c = pressing_c;
         
@@ -2886,6 +2910,12 @@ int main(int argc, char ** argv)
                             ocrfile = (profile()+"ocr2.txt");
                         else if(ocrmode == 2)
                             ocrfile = (profile()+"ocr3.txt");
+                        else if(ocrmode == 3)
+                            ocrfile = (profile()+"ocr4.txt");
+                        else if(ocrmode == 4)
+                            ocrfile = (profile()+"ocr5.txt");
+                        else if(ocrmode == 5)
+                            ocrfile = (profile()+"ocr6.txt");
                         else
                             ocrfile = (profile()+"ocr.txt");
                         
