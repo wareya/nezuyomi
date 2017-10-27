@@ -1300,6 +1300,37 @@ struct renderer {
         
         glEnable(GL_DEPTH_TEST);
     }
+    void set_scissor(float x1, float y1, float x2, float y2, bool nocamera = false)
+    {
+        glEnable(GL_SCISSOR_TEST);
+        if(!nocamera)
+        {
+            x1 = x1*cam_scale-cam_x;
+            y1 = y1*cam_scale-cam_y;
+            x2 = x2*cam_scale-cam_x;
+            y2 = y2*cam_scale-cam_y;
+        }
+        if(x2 < x1)
+        {
+            auto temp = x1;
+            x1 = x2;
+            x2 = temp;
+        }
+        if(y2 < y1)
+        {
+            auto temp = y1;
+            y1 = y2;
+            y2 = temp;
+        }
+        auto temp = y1;
+        y1 = h-y2;
+        y2 = h-temp;
+        glScissor(round(x1), round(y1), round(x2-x1), round(y2-y1));
+    }
+    void unset_scissor()
+    {
+        glDisable(GL_SCISSOR_TEST);
+    }
     void draw_quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, float r, float g, float b, float a, bool nocamera = false)
     {
         glDisable(GL_DEPTH_TEST);
@@ -3044,56 +3075,30 @@ int main(int argc, char ** argv)
             }
             else
             {
-                std::vector<double> xlist;
-                std::vector<double> ylist;
+                std::vector<double> xlist1, ylist1, xlist2, ylist2;
                 
-                double x1 = r.x1 - r.xskew*0.01*(r.y1-r.y2)/2;
-                double y1 = r.y1 - r.yskew*0.01*(r.x1-r.x2)/2;
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
                 
-                double x2 = r.x2 - r.xskew*0.01*(r.y1-r.y2)/2;
-                double y2 = r.y1 - r.yskew*0.01*(r.x2-r.x1)/2;
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
                 
-                double x3 = r.x1 - r.xskew*0.01*(r.y2-r.y1)/2;
-                double y3 = r.y2 - r.yskew*0.01*(r.x1-r.x2)/2;
-                
-                double x4 = r.x2 - r.xskew*0.01*(r.y2-r.y1)/2;
-                double y4 = r.y2 - r.yskew*0.01*(r.x2-r.x1)/2;
-                
-                xlist.push_back(x1);
-                xlist.push_back((x1+x2)/2);
-                xlist.push_back(x2);
-                xlist.push_back((x1+x3)/2);
-                xlist.push_back((x1+x2+x3+x4)/4);
-                xlist.push_back((x2+x4)/2);
-                xlist.push_back(x3);
-                xlist.push_back((x3+x4)/2);
-                xlist.push_back(x4);
-                
-                ylist.push_back(y1);
-                ylist.push_back((y1+y2)/2);
-                ylist.push_back(y2);
-                ylist.push_back((y1+y3)/2);
-                ylist.push_back((y1+y2+y3+y4)/4);
-                ylist.push_back((y2+y4)/2);
-                ylist.push_back(y3);
-                ylist.push_back((y3+y4)/2);
-                ylist.push_back(y4);
-                
-                for(auto& val : xlist)
+                for(int i = 0; i < 4; i++)
                 {
-                    if(val < r.x1) val = r.x1;
-                    if(val > r.x2) val = r.x2;
+                    auto x = xlist1[i];
+                    auto y = ylist1[i];
+                    auto xs = r.xskew*0.01;
+                    auto ys = r.yskew*0.01;
+                    xlist2.push_back(x/(1-ys*xs) + y*xs/(ys*xs-1) + (r.x1+r.x2)/2);
+                    ylist2.push_back(x*ys/(ys*xs-1) + y/(1-ys*xs) + (r.y1+r.y2)/2);
                 }
-                for(auto& val : ylist)
-                {
-                    if(val < r.y1) val = r.y1;
-                    if(val > r.y2) val = r.y2;
-                }
-                
-                myrenderer.draw_quad(xlist[0], ylist[0], xlist[1], ylist[1], xlist[3], ylist[3], xlist[4], ylist[4], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[1], ylist[1], xlist[2], ylist[2], xlist[4], ylist[4], xlist[5], ylist[5], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[3], ylist[3], xlist[4], ylist[4], xlist[6], ylist[6], xlist[7], ylist[7], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[4], ylist[4], xlist[5], ylist[5], xlist[7], ylist[7], xlist[8], ylist[8], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
+                myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.unset_scissor();
             }
         }
         // with tempregion too
@@ -3112,56 +3117,30 @@ int main(int argc, char ** argv)
             }
             else
             {
-                std::vector<double> xlist;
-                std::vector<double> ylist;
+                std::vector<double> xlist1, ylist1, xlist2, ylist2;
                 
-                double x1 = r.x1 - r.xskew*0.01*(r.y1-r.y2)/2;
-                double y1 = r.y1 - r.yskew*0.01*(r.x1-r.x2)/2;
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
                 
-                double x2 = r.x2 - r.xskew*0.01*(r.y1-r.y2)/2;
-                double y2 = r.y1 - r.yskew*0.01*(r.x2-r.x1)/2;
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
                 
-                double x3 = r.x1 - r.xskew*0.01*(r.y2-r.y1)/2;
-                double y3 = r.y2 - r.yskew*0.01*(r.x1-r.x2)/2;
-                
-                double x4 = r.x2 - r.xskew*0.01*(r.y2-r.y1)/2;
-                double y4 = r.y2 - r.yskew*0.01*(r.x2-r.x1)/2;
-                
-                xlist.push_back(x1);
-                xlist.push_back((x1+x2)/2);
-                xlist.push_back(x2);
-                xlist.push_back((x1+x3)/2);
-                xlist.push_back((x1+x2+x3+x4)/4);
-                xlist.push_back((x2+x4)/2);
-                xlist.push_back(x3);
-                xlist.push_back((x3+x4)/2);
-                xlist.push_back(x4);
-                
-                ylist.push_back(y1);
-                ylist.push_back((y1+y2)/2);
-                ylist.push_back(y2);
-                ylist.push_back((y1+y3)/2);
-                ylist.push_back((y1+y2+y3+y4)/4);
-                ylist.push_back((y2+y4)/2);
-                ylist.push_back(y3);
-                ylist.push_back((y3+y4)/2);
-                ylist.push_back(y4);
-                
-                for(auto& val : xlist)
+                for(int i = 0; i < 4; i++)
                 {
-                    if(val < r.x1) val = r.x1;
-                    if(val > r.x2) val = r.x2;
+                    auto x = xlist1[i];
+                    auto y = ylist1[i];
+                    auto xs = r.xskew*0.01;
+                    auto ys = r.yskew*0.01;
+                    xlist2.push_back(x/(1-ys*xs) + y*xs/(ys*xs-1) + (r.x1+r.x2)/2);
+                    ylist2.push_back(x*ys/(ys*xs-1) + y/(1-ys*xs) + (r.y1+r.y2)/2);
                 }
-                for(auto& val : ylist)
-                {
-                    if(val < r.y1) val = r.y1;
-                    if(val > r.y2) val = r.y2;
-                }
-                
-                myrenderer.draw_quad(xlist[0], ylist[0], xlist[1], ylist[1], xlist[3], ylist[3], xlist[4], ylist[4], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[1], ylist[1], xlist[2], ylist[2], xlist[4], ylist[4], xlist[5], ylist[5], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[3], ylist[3], xlist[4], ylist[4], xlist[6], ylist[6], xlist[7], ylist[7], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.draw_quad(xlist[4], ylist[4], xlist[5], ylist[5], xlist[7], ylist[7], xlist[8], ylist[8], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
+                myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
+                myrenderer.unset_scissor();
             }
         }
         if(currentsubtitle.initialized and fontinitialized)
