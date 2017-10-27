@@ -86,6 +86,8 @@ The region list is saved to PROFILE/region_\<an identifier based on folder and f
 
 z, x, c: Change OCR scripts. ocr.txt, ocr2.txt, ocr3.txt
 
+alt + z, x, c: Same, but ocr4.txt, ocr5.txt, and ocr6.txt
+
 When you make a region, nezuyomi will estimate the appropriate text resolution for you, pretending that it's vertical text. This is because, for some reason, a lot of OCR works very badly on vertical text unless it's scaled exactly right going into it. You should ignore the estimate for horizontal text and just use whatever's within half/double the actual text height in image pixels.
 
 ctrl+scroll: change the line count for size estimation
