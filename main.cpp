@@ -1976,8 +1976,9 @@ struct region
     std::string text;
     int mode = 0; // 0: vertical; 1: horizontal; 2: horizontal, alternate language?
     int pixel_scale = 32;
-    int xskew = 0;
     int yskew = 0;
+    int xskew = 0;
+    int skewmode = 1;
 };
 
 int textscale = 32; // most OCR software works best at a particular pixel size per character. for the OCR setup I have, it's 32 pixels. This will be an option later.
@@ -1992,10 +1993,14 @@ std::vector<region> regions;
 
 region * currentregion = 0;
 
-region tempregion = {0,0,0,0,"",0,0,0,0};
+region tempregion = {0,0,0,0,"",0,0,0,0,0};
 
 void load_regions(std::string folder, std::string filename, int corewidth, int coreheight)
 {
+    puts("loading regions for");
+    puts(folder.data());
+    puts(filename.data());
+    
     regions = {};
     if(folder.length() > 0)
         folder[folder.length()-1] = '_';
@@ -2036,7 +2041,7 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             continue;
         }
         
-        if(parts.size() == 7 or parts.size() == 9)
+        if(parts.size() == 7 or parts.size() == 9 or parts.size() == 10)
         {
             firstline = false;
             
@@ -2076,14 +2081,22 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             
             if(parts.size() == 7)
             {
-                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, 0, 0});
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, 0, 0, 0});
             }
             else if(parts.size() == 9)
             {
-                int xskew = double_from_string(parts[7]);
-                int yskew = double_from_string(parts[8]);
+                int yskew = double_from_string(parts[7]);
+                int xskew = double_from_string(parts[8]);
                 
-                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, xskew, yskew});
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, 0});
+            }
+            else if(parts.size() == 10)
+            {
+                int yskew = double_from_string(parts[7]);
+                int xskew = double_from_string(parts[8]);
+                int skewmode = double_from_string(parts[9]);
+                
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, skewmode});
             }
         }
     }
@@ -2094,6 +2107,10 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
 
 void write_regions(std::string folder, std::string filename, int width, int height)
 {
+    puts("writing regions for");
+    puts(folder.data());
+    puts(filename.data());
+    
     if(folder.length() > 0)
         folder[folder.length()-1] = '_';
     auto f = profile_fopen(("region_"+folder+filename+".txt").data(), "wb");
@@ -2146,9 +2163,11 @@ void write_regions(std::string folder, std::string filename, int width, int heig
         fputc('\t', f);
         fputs(std::to_string(r.pixel_scale).data(), f);
         fputc('\t', f);
+        fputs(std::to_string(r.yskew).data(), f);
+        fputc('\t', f);
         fputs(std::to_string(r.xskew).data(), f);
         fputc('\t', f);
-        fputs(std::to_string(r.yskew).data(), f);
+        fputs(std::to_string(r.skewmode).data(), f);
         fputc('\n', f);
     }
     
@@ -2158,7 +2177,7 @@ void write_regions(std::string folder, std::string filename, int width, int heig
 // forward declare int ocr(){} from ocr.cpp
 int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale, const char * xshear, const char * yshear);
 
-unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height)
+unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height, int yskew, int xskew)
 {
     x1 = std::min(std::max(0, x1), tex->w-1);
     x2 = std::min(std::max(0, x2), tex->w);
@@ -2171,6 +2190,50 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
     int tw = tex->w;
     
     int i = 0;
+    
+    auto xs = xskew*0.01;
+    auto ys = yskew*0.01;
+    
+    // this is more calculations than needed but i don't feel like optimizing it
+    
+    /*
+    float tx1 = x1 + xs*(y1-(y1+y2)/2.0f);
+    float ty1 = y1 + ys*(x1-(x1+x2)/2.0f);
+    
+    float tx2 = x2 + xs*(y1-(y1+y2)/2.0f);
+    float ty2 = y1 + ys*(x2-(x1+x2)/2.0f);
+    
+    float tx3 = x1 + xs*(y2-(y1+y2)/2.0f);
+    float ty3 = y2 + ys*(x1-(x1+x2)/2.0f);
+    
+    float tx4 = x2 + xs*(y2-(y1+y2)/2.0f);
+    float ty4 = y2 + ys*(x2-(x1+x2)/2.0f);
+    */
+    float cx1 = x1-(x1+x2)/2.0f;
+    float cx2 = x2-(x1+x2)/2.0f;
+    float cy1 = y1-(y1+y2)/2.0f;
+    float cy2 = y2-(y1+y2)/2.0f;
+    /*
+    float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
+    float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
+    
+    float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
+    float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
+    */
+    float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
+    float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
+    
+    float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
+    float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
+    
+    float minx = std::min(tx1, tx2);
+    float miny = std::min(ty1, ty2);
+    
+    float xpad = fabs(minx-cx1);
+    float ypad = fabs(miny-cy1);
+    
+    printf("padding %f %f\n", xpad, ypad);
+    
     for(int y = y1; y < y2; y++)
     {
         for(int x = x1; x < x2; x++)
@@ -2178,6 +2241,13 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
             for(int c = 0; c < 4; c++)
             {
                 data[i] = tex->mydata[(y*tw + x)*4 + c];
+                float tempx = x-(x1+x2)/2.0f;
+                float tempy = y-(y1+y2)/2.0f;
+                float skx = tempx + xs*tempy + (x1+x2)/2.0f;
+                float sky = tempy + ys*tempx + (y1+y2)/2.0f;
+                
+                if(skx < x1+xpad or skx > x2-xpad or sky < y1+ypad or sky > y2-ypad)
+                    data[i] = 0xFF;
                 i++;
             }
         }
@@ -2239,8 +2309,8 @@ struct textobject {
 };
 
 int ocrmode = 0;
-int shear_x = 0;
 int shear_y = 0;
+int shear_x = 0;
 
 #ifdef _WIN32
 
@@ -2477,7 +2547,7 @@ int main(int argc, char ** argv)
     
     if(mydir.size() == 0) return 0;
     
-    std::sort(mydir.begin(), mydir.end(), [](std::string a, std::string b) {
+    auto sortfunction = [](std::string a, std::string b) {
         auto numeric = [](const char & c) {return (c >= '0' and c <= '9');};
         size_t i;
         for(i = 0; i < a.length() and i < b.length() and a[i] == b[i]; i++);
@@ -2524,7 +2594,10 @@ int main(int argc, char ** argv)
         {
             return c1 < c2;
         }
-    });
+    };
+    
+    std::sort(mydir.begin(), mydir.end(), sortfunction);
+    std::sort(mydir_filenames.begin(), mydir_filenames.end(), sortfunction);
     
     int index = 0;
     if(from_filename)
@@ -2769,22 +2842,7 @@ int main(int argc, char ** argv)
         scrollMutex.lock();
             if(scroll != 0)
             {
-                if(shiftpressed and altpressed and !ctrlpressed)
-                {
-                    shear_x += scroll;
-                    if(shear_x > 20) shear_x = 20;
-                    if(shear_x < -20) shear_x = -20;
-                    std::string about = "";
-                    if(shear_x > 0)
-                        about = "% (pushes top edge leftwards)";
-                    if(shear_x < 0)
-                        about = "% (pushes top edge rightwards)";
-                    currentsubtitle = subtitle(std::string("set x axis shear for OCR to ")+std::to_string((int)(shear_x))+about, 24, &myrenderer);
-                    
-                    if(currentregion and currentregion->text == "")
-                        currentregion->xskew = shear_x;
-                }
-                else if(shiftpressed and !altpressed and ctrlpressed)
+                if(shiftpressed and !altpressed and ctrlpressed)
                 {
                     shear_y += scroll;
                     if(shear_y > 20) shear_y = 20;
@@ -2798,6 +2856,21 @@ int main(int argc, char ** argv)
                     
                     if(currentregion and currentregion->text == "")
                         currentregion->yskew = shear_y;
+                }
+                else if(shiftpressed and altpressed and !ctrlpressed)
+                {
+                    shear_x += scroll;
+                    if(shear_x > 20) shear_x = 20;
+                    if(shear_x < -20) shear_x = -20;
+                    std::string about = "";
+                    if(shear_x > 0)
+                        about = "% (pushes top edge leftwards)";
+                    if(shear_x < 0)
+                        about = "% (pushes top edge rightwards)";
+                    currentsubtitle = subtitle(std::string("set x axis shear for OCR to ")+std::to_string((int)(shear_x))+about, 24, &myrenderer);
+                    
+                    if(currentregion and currentregion->text == "")
+                        currentregion->xskew = shear_x;
                 }
                 else if(altpressed and ctrlpressed)
                 {
@@ -2878,7 +2951,7 @@ int main(int argc, char ** argv)
                     else
                     {
                         int img_w, img_h;
-                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h);
+                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0);
                         
                         puts("writing cropped image to disk");
                         auto f = wrap_fopen((profile()+"temp_ocr.png").data(), "wb");
@@ -2896,13 +2969,13 @@ int main(int argc, char ** argv)
                         puts((profile()+"ocr.txt").data());
                         
                         r.pixel_scale = textscale;
-                        r.xskew = shear_x;
                         r.yskew = shear_y;
+                        r.xskew = shear_x;
                         
                         std::string scale_double_percent = std::to_string(32/float(textscale)*200);
                         
-                        std::string xshear_string = std::to_string(shear_x/100.0);
-                        std::string yshear_string = std::to_string(shear_y/100.0);
+                        std::string xshear_string = std::to_string(shear_y/100.0);
+                        std::string yshear_string = std::to_string(shear_x/100.0);
                         
                         std::string ocrfile;
                         
@@ -2968,7 +3041,7 @@ int main(int argc, char ** argv)
                     auto & r = regions[regions.size()-1];
                     
                     int img_w, img_h;
-                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h);
+                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0);
                     int estimated_width = estimate_width(data, img_w, img_h);
                     printf("estimated width %d\n", estimated_width);
                     free(data);
@@ -2980,10 +3053,10 @@ int main(int argc, char ** argv)
                     currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
                     
                     currentregion = &(regions[regions.size()-1]);
-                    currentregion->xskew = shear_x;
                     currentregion->yskew = shear_y;
+                    currentregion->xskew = shear_x;
                     
-                    tempregion = {0,0,0,0,"",0,0,0,0};
+                    tempregion = {0,0,0,0,"",0,0,0,0,0};
                 }
             }
         }
@@ -2997,15 +3070,15 @@ int main(int argc, char ** argv)
                 float upperx = std::max(mx, m1_mx_press);
                 float lowery = std::min(my, m1_my_press);
                 float uppery = std::max(my, m1_my_press);
-                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_x, shear_y};
-                tempregion.xskew = shear_x;
+                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_y, shear_x};
                 tempregion.yskew = shear_y;
+                tempregion.xskew = shear_x;
             }
             else
-                tempregion = {0,0,0,0,"",0,0,0,0};
+                tempregion = {0,0,0,0,"",0,0,0,0,0};
         }
         else
-            tempregion = {0,0,0,0,"",0,0,0,0};
+            tempregion = {0,0,0,0,"",0,0,0,0,0};
         last_m1 = current_m1;
         
         
@@ -3092,7 +3165,7 @@ int main(int argc, char ** argv)
         
         for(region r : regions)
         {
-            if(r.xskew == 0 and r.yskew == 0)
+            if(r.yskew == 0 and r.xskew == 0)
             {
                 double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
                 double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
@@ -3107,34 +3180,65 @@ int main(int argc, char ** argv)
             {
                 std::vector<double> xlist1, ylist1, xlist2, ylist2;
                 
-                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2.0);
                 
-                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2.0);
                 
                 for(int i = 0; i < 4; i++)
                 {
                     auto x = xlist1[i];
                     auto y = ylist1[i];
-                    auto xs = r.xskew*0.01;
                     auto ys = r.yskew*0.01;
-                    xlist2.push_back(x/(1-ys*xs) + y*xs/(ys*xs-1) + (r.x1+r.x2)/2);
-                    ylist2.push_back(x*ys/(ys*xs-1) + y/(1-ys*xs) + (r.y1+r.y2)/2);
+                    auto xs = r.xskew*0.01;
+                    xlist2.push_back(x/(1-xs*ys) + y*xs/(xs*ys-1) + (r.x1+r.x2)/2.0);
+                    ylist2.push_back(x*ys/(xs*ys-1) + y/(1-xs*ys) + (r.y1+r.y2)/2.0);
                 }
-                myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
-                myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.unset_scissor();
+                if(r.skewmode == 1)
+                {
+                    float minx = std::min(xlist2[0], xlist2[2]);
+                    float miny = std::min(ylist2[0], ylist2[1]);
+                    float xpad = fabs(minx-r.x1);
+                    float ypad = fabs(miny-r.y1);
+                    
+                    xlist2[0] += xpad;
+                    xlist2[2] += xpad;
+                    xlist2[1] -= xpad;
+                    xlist2[3] -= xpad;
+                    
+                    ylist2[0] += ypad;
+                    ylist2[1] += ypad;
+                    ylist2[2] -= ypad;
+                    ylist2[3] -= ypad;
+                }
+                if(xlist2[1] >= xlist2[0] and ylist2[2] > ylist2[0])
+                {
+                    myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
+                    myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
+                    myrenderer.unset_scissor();
+                }
+                if(xlist2[1] < xlist2[0]+2 or ylist2[2] < ylist2[0]+2)
+                {
+                    double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
+                    double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
+                    double x2 = (r.x2*myrenderer.cam_scale-myrenderer.cam_x);
+                    double y2 = (r.y2*myrenderer.cam_scale-myrenderer.cam_y);
+                    myrenderer.draw_rect(x1-1, y1-1, x2-1, y1+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x1-1, y1+1, x1+1, y2+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x1+1, y2-1, x2+1, y2+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x2-1, y1-1, x2+1, y2-1, 0.8, 0.2, 1.0, 0.5, true);
+                }
             }
         }
         // with tempregion too
         {
             auto & r = tempregion;
-            if(r.xskew == 0 and r.yskew == 0)
+            if(r.yskew == 0 and r.xskew == 0)
             {
                 double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
                 double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
@@ -3149,28 +3253,59 @@ int main(int argc, char ** argv)
             {
                 std::vector<double> xlist1, ylist1, xlist2, ylist2;
                 
-                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x1 - (r.x1+r.x2)/2);
-                xlist1.push_back(r.x2 - (r.x1+r.x2)/2);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x1 - (r.x1+r.x2)/2.0);
+                xlist1.push_back(r.x2 - (r.x1+r.x2)/2.0);
                 
-                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y1 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
-                ylist1.push_back(r.y2 - (r.y1+r.y2)/2);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y1 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2.0);
+                ylist1.push_back(r.y2 - (r.y1+r.y2)/2.0);
                 
                 for(int i = 0; i < 4; i++)
                 {
                     auto x = xlist1[i];
                     auto y = ylist1[i];
-                    auto xs = r.xskew*0.01;
                     auto ys = r.yskew*0.01;
-                    xlist2.push_back(x/(1-ys*xs) + y*xs/(ys*xs-1) + (r.x1+r.x2)/2);
-                    ylist2.push_back(x*ys/(ys*xs-1) + y/(1-ys*xs) + (r.y1+r.y2)/2);
+                    auto xs = r.xskew*0.01;
+                    xlist2.push_back(x/(1-xs*ys) + y*xs/(xs*ys-1) + (r.x1+r.x2)/2.0);
+                    ylist2.push_back(x*ys/(xs*ys-1) + y/(1-xs*ys) + (r.y1+r.y2)/2.0);
                 }
-                myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
-                myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
-                myrenderer.unset_scissor();
+                if(r.skewmode == 1)
+                {
+                    float minx = std::min(xlist2[0], xlist2[2]);
+                    float miny = std::min(ylist2[0], ylist2[1]);
+                    float xpad = fabs(minx-r.x1);
+                    float ypad = fabs(miny-r.y1);
+                    
+                    xlist2[0] += xpad;
+                    xlist2[2] += xpad;
+                    xlist2[1] -= xpad;
+                    xlist2[3] -= xpad;
+                    
+                    ylist2[0] += ypad;
+                    ylist2[1] += ypad;
+                    ylist2[2] -= ypad;
+                    ylist2[3] -= ypad;
+                }
+                if(xlist2[1] >= xlist2[0] and ylist2[2] > ylist2[0])
+                {
+                    myrenderer.set_scissor(r.x1, r.y1, r.x2, r.y2);
+                    myrenderer.draw_quad(xlist2[0], ylist2[0], xlist2[1], ylist2[1], xlist2[2], ylist2[2], xlist2[3], ylist2[3], 0.2, 0.8, 1.0, 0.5);
+                    myrenderer.unset_scissor();
+                }
+                if(xlist2[1] < xlist2[0]+2 or ylist2[2] < ylist2[0]+2)
+                {
+                    double x1 = (r.x1*myrenderer.cam_scale-myrenderer.cam_x);
+                    double y1 = (r.y1*myrenderer.cam_scale-myrenderer.cam_y);
+                    double x2 = (r.x2*myrenderer.cam_scale-myrenderer.cam_x);
+                    double y2 = (r.y2*myrenderer.cam_scale-myrenderer.cam_y);
+                    myrenderer.draw_rect(x1-1, y1-1, x2-1, y1+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x1-1, y1+1, x1+1, y2+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x1+1, y2-1, x2+1, y2+1, 0.8, 0.2, 1.0, 0.5, true);
+                    myrenderer.draw_rect(x2-1, y1-1, x2+1, y2-1, 0.8, 0.2, 1.0, 0.5, true);
+                }
             }
         }
         if(currentsubtitle.initialized and fontinitialized)
