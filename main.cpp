@@ -2085,15 +2085,15 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             }
             else if(parts.size() == 9)
             {
-                int yskew = double_from_string(parts[7]);
-                int xskew = double_from_string(parts[8]);
+                int xskew = double_from_string(parts[7]);
+                int yskew = double_from_string(parts[8]);
                 
                 regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, 0});
             }
             else if(parts.size() == 10)
             {
-                int yskew = double_from_string(parts[7]);
-                int xskew = double_from_string(parts[8]);
+                int xskew = double_from_string(parts[7]);
+                int yskew = double_from_string(parts[8]);
                 int skewmode = double_from_string(parts[9]);
                 
                 regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, skewmode});
@@ -2163,9 +2163,9 @@ void write_regions(std::string folder, std::string filename, int width, int heig
         fputc('\t', f);
         fputs(std::to_string(r.pixel_scale).data(), f);
         fputc('\t', f);
-        fputs(std::to_string(r.yskew).data(), f);
-        fputc('\t', f);
         fputs(std::to_string(r.xskew).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.yskew).data(), f);
         fputc('\t', f);
         fputs(std::to_string(r.skewmode).data(), f);
         fputc('\n', f);
