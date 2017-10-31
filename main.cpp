@@ -2194,32 +2194,11 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
     auto xs = xskew*0.01;
     auto ys = yskew*0.01;
     
-    // this is more calculations than needed but i don't feel like optimizing it
-    
-    /*
-    float tx1 = x1 + xs*(y1-(y1+y2)/2.0f);
-    float ty1 = y1 + ys*(x1-(x1+x2)/2.0f);
-    
-    float tx2 = x2 + xs*(y1-(y1+y2)/2.0f);
-    float ty2 = y1 + ys*(x2-(x1+x2)/2.0f);
-    
-    float tx3 = x1 + xs*(y2-(y1+y2)/2.0f);
-    float ty3 = y2 + ys*(x1-(x1+x2)/2.0f);
-    
-    float tx4 = x2 + xs*(y2-(y1+y2)/2.0f);
-    float ty4 = y2 + ys*(x2-(x1+x2)/2.0f);
-    */
     float cx1 = x1-(x1+x2)/2.0f;
     float cx2 = x2-(x1+x2)/2.0f;
     float cy1 = y1-(y1+y2)/2.0f;
     float cy2 = y2-(y1+y2)/2.0f;
-    /*
-    float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
-    float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
     
-    float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
-    float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
-    */
     float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
     float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
     
@@ -2231,8 +2210,6 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
     
     float xpad = fabs(minx-cx1);
     float ypad = fabs(miny-cy1);
-    
-    printf("padding %f %f\n", xpad, ypad);
     
     for(int y = y1; y < y2; y++)
     {
@@ -2935,8 +2912,53 @@ int main(int argc, char ** argv)
                 float x2 = (r.x2*scale-x);
                 float y2 = (r.y2*scale-y);
                 
-                if (m1_mx_release >= x1 and m1_mx_release <= x2 and m1_mx_press >= x1 and m1_mx_press <= x2 
-                and m1_my_release >= y1 and m1_my_release <= y2 and m1_my_press >= y1 and m1_my_press <= y2)
+                bool canbepressing = true;
+                
+                if (m1_mx_release < x1 or m1_mx_release > x2 or m1_mx_press < x1 or m1_mx_press > x2 
+                 or m1_my_release < y1 or m1_my_release > y2 or m1_my_press < y1 or m1_my_press > y2)
+                    canbepressing = false;
+                
+                if(r.skewmode == 1)
+                {
+                    auto xs = r.xskew*0.01;
+                    auto ys = r.yskew*0.01;
+                    
+                    float cx1 = r.x1-(r.x1+r.x2)/2.0f;
+                    float cx2 = r.x2-(r.x1+r.x2)/2.0f;
+                    float cy1 = r.y1-(r.y1+r.y2)/2.0f;
+                    float cy2 = r.y2-(r.y1+r.y2)/2.0f;
+                    
+                    float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
+                    float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
+                    
+                    float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
+                    float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
+                    
+                    float minx = std::min(tx1, tx2);
+                    float miny = std::min(ty1, ty2);
+                    
+                    float xpad = fabs(minx-cx1);
+                    float ypad = fabs(miny-cy1);
+                    
+                    float tempx = (m1_mx_release+x)/scale-(r.x1+r.x2)/2.0f;
+                    float tempy = (m1_my_release+y)/scale-(r.y1+r.y2)/2.0f;
+                    
+                    float skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
+                    float sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
+                    
+                    if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
+                        canbepressing = false;
+                    
+                    tempx = (m1_mx_press+x)/scale-(r.x1+r.x2)/2.0f;
+                    tempy = (m1_my_press+y)/scale-(r.y1+r.y2)/2.0f;
+                    
+                    skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
+                    sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
+                    
+                    if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
+                        canbepressing = false;
+                }
+                if(canbepressing)
                 {
                     if(r.text != std::string(""))
                     {
