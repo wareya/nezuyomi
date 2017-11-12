@@ -1979,11 +1979,13 @@ struct region
     int yskew = 0;
     int xskew = 0;
     int skewmode = 1;
+    float gamma = 1;
 };
 
 int textscale = 32; // most OCR software works best at a particular pixel size per character. for the OCR setup I have, it's 32 pixels. This will be an option later.
 int textlines = 1; // used for estimation after you select a region
 float paddingestimate = 0.35; // estimate of internal padding between lines
+float gamma = 1.0; // used to change dark/light balance of grays for images with non-perceptual blur or antialiasing
 
 subtitle currentsubtitle;
 
@@ -1993,7 +1995,7 @@ std::vector<region> regions;
 
 region * currentregion = 0;
 
-region tempregion = {0,0,0,0,"",0,0,0,0,0};
+region tempregion = {0,0,0,0,"",0,0,0,0,0,1};
 
 void load_regions(std::string folder, std::string filename, int corewidth, int coreheight)
 {
@@ -2041,7 +2043,7 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             continue;
         }
         
-        if(parts.size() == 7 or parts.size() == 9 or parts.size() == 10)
+        if(parts.size() == 7 or parts.size() == 9 or parts.size() == 10 or parts.size() == 11)
         {
             firstline = false;
             
@@ -2081,14 +2083,14 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
             
             if(parts.size() == 7)
             {
-                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, 0, 0, 0});
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, 0, 0, 0, 1});
             }
             else if(parts.size() == 9)
             {
                 int xskew = double_from_string(parts[7]);
                 int yskew = double_from_string(parts[8]);
                 
-                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, 0});
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, 0, 1});
             }
             else if(parts.size() == 10)
             {
@@ -2096,7 +2098,16 @@ void load_regions(std::string folder, std::string filename, int corewidth, int c
                 int yskew = double_from_string(parts[8]);
                 int skewmode = double_from_string(parts[9]);
                 
-                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, skewmode});
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, skewmode, 1});
+            }
+            else if(parts.size() == 11)
+            {
+                int xskew = double_from_string(parts[7]);
+                int yskew = double_from_string(parts[8]);
+                int skewmode = double_from_string(parts[9]);
+                float mygamma = double_from_string(parts[10]);
+                
+                regions.push_back({x1, y1, x2, y2, text, mode, pixel_scale, yskew, xskew, skewmode, mygamma});
             }
         }
     }
@@ -2168,6 +2179,8 @@ void write_regions(std::string folder, std::string filename, int width, int heig
         fputs(std::to_string(r.yskew).data(), f);
         fputc('\t', f);
         fputs(std::to_string(r.skewmode).data(), f);
+        fputc('\t', f);
+        fputs(std::to_string(r.gamma).data(), f);
         fputc('\n', f);
     }
     
@@ -2177,7 +2190,7 @@ void write_regions(std::string folder, std::string filename, int width, int heig
 // forward declare int ocr(){} from ocr.cpp
 int ocr(const char * filename, const char * commandfilename, const char * outfilename, const char * scale, const char * xshear, const char * yshear);
 
-unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height, int yskew, int xskew)
+unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y2, int * width, int * height, int yskew, int xskew, float exponent)
 {
     x1 = std::min(std::max(0, x1), tex->w-1);
     x2 = std::min(std::max(0, x2), tex->w);
@@ -2218,6 +2231,11 @@ unsigned char * crop_copy(renderer::texture * tex, int x1, int y1, int x2, int y
             for(int c = 0; c < 4; c++)
             {
                 data[i] = tex->mydata[(y*tw + x)*4 + c];
+                
+                float temp = data[i]/255.0f;
+                temp = pow(temp, exponent);
+                data[i] = round(temp*255.0f);
+                
                 float tempx = x-(x1+x2)/2.0f;
                 float tempy = y-(y1+y2)/2.0f;
                 float skx = tempx + xs*tempy + (x1+x2)/2.0f;
@@ -2815,6 +2833,7 @@ int main(int argc, char ** argv)
         bool altpressed = (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
         bool ctrlpressed = (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
         bool shiftpressed = (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS or glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
+        bool gpressed = (glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS);
         
         scrollMutex.lock();
             if(scroll != 0)
@@ -2856,6 +2875,24 @@ int main(int argc, char ** argv)
                     if(paddingestimate < 0) paddingestimate = 0;
                     if(paddingestimate > 1) paddingestimate = 1;
                     currentsubtitle = subtitle(std::string("set padding estimate for OCR to ")+std::to_string((int)(paddingestimate*100))+"%", 24, &myrenderer);
+                }
+                else if(gpressed and ctrlpressed)
+                {
+                    gamma += scroll*0.1;
+                    gamma = round(gamma*10.0f)/10.0f;
+                    if(gamma < 1/3.0) gamma = 1/3.0;
+                    if(gamma > 3.0) gamma = 3.0;
+                    
+                    std::string about = "";
+                    if(gamma > 0)
+                        about = " (darkens grays)";
+                    if(gamma < 0)
+                        about = " (lightens grays)";
+                    
+                    currentsubtitle = subtitle(std::string("gamma correction exponent set to ")+std::to_string(gamma)+about, 24, &myrenderer);
+                    
+                    if(currentregion and currentregion->text == "")
+                        currentregion->gamma = gamma;
                 }
                 else if(altpressed)
                 {
@@ -2973,7 +3010,7 @@ int main(int argc, char ** argv)
                     else
                     {
                         int img_w, img_h;
-                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0);
+                        auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
                         
                         puts("writing cropped image to disk");
                         auto f = wrap_fopen((profile()+"temp_ocr.png").data(), "wb");
@@ -3061,9 +3098,10 @@ int main(int argc, char ** argv)
                     float uppery = std::max(m1_my_release, m1_my_press);
                     regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale});
                     auto & r = regions[regions.size()-1];
+                    r.gamma = gamma;
                     
                     int img_w, img_h;
-                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0);
+                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
                     int estimated_width = estimate_width(data, img_w, img_h);
                     printf("estimated width %d\n", estimated_width);
                     free(data);
@@ -3077,8 +3115,9 @@ int main(int argc, char ** argv)
                     currentregion = &(regions[regions.size()-1]);
                     currentregion->yskew = shear_y;
                     currentregion->xskew = shear_x;
+                    currentregion->gamma = gamma;
                     
-                    tempregion = {0,0,0,0,"",0,0,0,0,0};
+                    tempregion = {0,0,0,0,"",0,0,0,0,0,1};
                 }
             }
         }
@@ -3092,15 +3131,13 @@ int main(int argc, char ** argv)
                 float upperx = std::max(mx, m1_mx_press);
                 float lowery = std::min(my, m1_my_press);
                 float uppery = std::max(my, m1_my_press);
-                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_y, shear_x};
-                tempregion.yskew = shear_y;
-                tempregion.xskew = shear_x;
+                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_y, shear_x, 1, gamma};
             }
             else
-                tempregion = {0,0,0,0,"",0,0,0,0,0};
+                tempregion = {0,0,0,0,"",0,0,0,0,0,1};
         }
         else
-            tempregion = {0,0,0,0,"",0,0,0,0,0};
+            tempregion = {0,0,0,0,"",0,0,0,0,0,1};
         last_m1 = current_m1;
         
         
