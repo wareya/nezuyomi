@@ -1943,8 +1943,8 @@ struct glyph
         
         w = bitmap.width;
         h = bitmap.rows;
-        x = pos.x_offset/64.0;
-        y = pos.y_offset/64.0;
+        x = pos.x_offset/64.0 + fontface->glyph->bitmap_left;
+        y = pos.y_offset/64.0 - fontface->glyph->bitmap_top;
         x_advance = pos.x_advance/64.0;
         y_advance = pos.y_advance/64.0;
         
@@ -3413,13 +3413,11 @@ int main(int argc, char ** argv)
             uint32_t lastindex = 0;
             float fontscale = 1;
             
-            int ascent, descent, linegap;
-            //stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
             float actual_descent = fontface->size->metrics.descender / float(1<<6);
             float actual_ascent  = fontface->size->metrics.ascender / float(1<<6);
             float height = fontface->size->metrics.height / float(1<<6);
             float x = 0;
-            float y = myrenderer.h + actual_descent;
+            float y = myrenderer.h + actual_descent - 5;
             
             myrenderer.draw_rect(0, myrenderer.h - height - 5, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
             
@@ -3429,12 +3427,12 @@ int main(int argc, char ** argv)
                 auto glyph = textcache[c];
                 
                 if(glyph->texture)
-                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y-glyph->h), 0.2);
+                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y), 0.2);
                 
                 lastindex = glyph->index;
                 
                 x += glyph->x_advance;
-                y -= glyph->y_advance;
+                y += glyph->y_advance;
                 
                 i++;
             }
