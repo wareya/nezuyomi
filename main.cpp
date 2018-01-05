@@ -1919,10 +1919,7 @@ uint32_t glyph_lookup(uint32_t codepoint)
 struct glyph
 {
     renderer::texture * texture = 0;
-    int w, h;
-    float x, y;
-    float x_advance;
-    float y_advance;
+    int w, h, x, y;
     uint64_t index;
     renderer * myrenderer = 0;
     
@@ -1940,13 +1937,10 @@ struct glyph
         index = info.codepoint;
         
         auto bitmap = fontface->glyph->bitmap;
-        
         w = bitmap.width;
         h = bitmap.rows;
-        x = pos.x_offset/64.0 + fontface->glyph->bitmap_left;
-        y = pos.y_offset/64.0 - fontface->glyph->bitmap_top;
-        x_advance = pos.x_advance/64.0;
-        y_advance = pos.y_advance/64.0;
+        x = fontface->glyph->bitmap_left;
+        y = fontface->glyph->bitmap_top;
         
         if(bitmap.buffer && bitmap.pixel_mode == FT_PIXEL_MODE_GRAY)
         {
@@ -1967,6 +1961,18 @@ struct glyph
     }
 };
 
+struct posdata
+{
+    float x, y, x_advance, y_advance;
+    posdata(const hb_glyph_info_t & info, const hb_glyph_position_t & pos, const glyph & glyph)
+    {
+        x = pos.x_offset/64.0 + glyph.x;
+        y = pos.y_offset/64.0 - glyph.y;
+        x_advance = pos.x_advance/64.0;
+        y_advance = pos.y_advance/64.0;
+    }
+};
+
 std::map<hb_codepoint_t, glyph*> textcache;
 struct subtitle
 {
@@ -1975,6 +1981,7 @@ struct subtitle
     renderer * myrenderer;
     
     std::vector<hb_codepoint_t> glyphs;
+    std::vector<posdata> positions;
     
     subtitle()
     {
@@ -2002,6 +2009,7 @@ struct subtitle
             if(textcache.count(glyph_info[i].codepoint) == 0)
                 textcache[glyph_info[i].codepoint] = new glyph(glyph_info[i], glyph_pos[i], size, myrenderer);
             glyphs.push_back(glyph_info[i].codepoint);
+            positions.push_back(posdata(glyph_info[i], glyph_pos[i], *textcache[glyph_info[i].codepoint]));
         }
         
         hb_buffer_destroy(buffer);
@@ -3409,10 +3417,6 @@ int main(int argc, char ** argv)
         }
         if(currentsubtitle.initialized and fontinitialized)
         {
-            ////puts("bfr");
-            uint32_t lastindex = 0;
-            float fontscale = 1;
-            
             float actual_descent = fontface->size->metrics.descender / float(1<<6);
             float actual_ascent  = fontface->size->metrics.ascender / float(1<<6);
             float height = fontface->size->metrics.height / float(1<<6);
@@ -3421,20 +3425,17 @@ int main(int argc, char ** argv)
             
             myrenderer.draw_rect(0, myrenderer.h - height - 5, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
             
-            int i = 0;
-            for(auto c : currentsubtitle.glyphs)
+            for(unsigned int i = 0; i < currentsubtitle.glyphs.size(); i++)
             {
-                auto glyph = textcache[c];
+                auto index = currentsubtitle.glyphs[i];
+                const auto & glyph = textcache[index];
+                const auto & pos = currentsubtitle.positions[i];
                 
                 if(glyph->texture)
-                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y), 0.2);
+                    myrenderer.draw_text_texture(glyph->texture, round(x+pos.x), round(y+pos.y), 0.2);
                 
-                lastindex = glyph->index;
-                
-                x += glyph->x_advance;
-                y += glyph->y_advance;
-                
-                i++;
+                x += pos.x_advance;
+                y += pos.y_advance;
             }
         }
         //myrenderer.draw_rect(-1, -1, 1, 1, 10, 0.2, 0.8, 1.0, 0.4);
