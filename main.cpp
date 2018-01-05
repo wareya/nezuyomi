@@ -27,8 +27,8 @@ limitations under the License.
 #include "include/stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "include/stb_image_write.h"
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "include/stb_truetype.h"
+
+#include "include/hb/hb-ft.h"
 
 #include "include/unishim_split.h"
 #include "include/unifile.h"
@@ -1833,11 +1833,19 @@ void load_config()
 }
 
 bool fontinitialized = false;
-stbtt_fontinfo fontinfo;
-uint8_t * fontbuffer;
+FT_Face fontface;
+FT_Library freetype;
+hb_font_t * hbfont = 0;
+uint8_t * fontbuffer = 0;
 
 void init_font()
 {
+    auto error = FT_Init_FreeType(&freetype);
+    if(error)
+    {
+        puts("failed to initialize freetype");
+        return;
+    }
     auto fontfile = profile_fopen((std::string(fontname)).data(), "rb");
     if(!fontfile)
     {
@@ -1864,23 +1872,33 @@ void init_font()
     }
     fclose(fontfile);
     
-    if(stbtt_InitFont(&fontinfo, fontbuffer, stbtt_GetFontOffsetForIndex(fontbuffer, 0)) == 0)
+    error = FT_New_Memory_Face(freetype, fontbuffer, fontsize, 0, &fontface);
+    if(error)
     {
         puts("Something happened initializing the font");
         return;
     }
     
+    error = FT_Set_Pixel_Sizes(fontface, 0, 24);
+    if(error)
+    {
+        puts("Something happened setting the font size");
+        return;
+    }
+    
+    // unicode is the default but instead of checking to see if the default charmap loaded
+    // we want to force it to use a unicode charmap and throw an error if it truly cannot
+    error = FT_Select_Charmap(fontface, FT_ENCODING_UNICODE);
+    if(error)
+    {
+        puts("Something happened setting the font character map (font probably doesn't have a unicode mapping)");
+        return;
+    }
+    
+    hbfont = hb_ft_font_create(fontface, NULL);
+    hb_font_set_scale(hbfont, 24, 24); // 24 integer representation exactly
+    
     fontinitialized = true;
-}
-
-// Gets how tall the font's ascent and descent area is if rendered at the given size.
-int font_height_pixels(float size)
-{
-    if(!fontinitialized) return 0;
-    float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
-    int ascent, descent;
-    stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, nullptr);
-    return (ascent-descent)*fontscale;
 }
 
 // Cache of codepoint -> glyph index
@@ -1888,12 +1906,12 @@ std::map<uint32_t, uint32_t> indexcache;
 uint32_t glyph_lookup(uint32_t codepoint)
 {
     if(!fontinitialized) return 0;
-    //if(indexcache.count(codepoint) > 0)
-    //    return indexcache[codepoint];
-    //else
+    if(indexcache.count(codepoint) > 0)
+        return indexcache[codepoint];
+    else
     {
-        uint32_t index = stbtt_FindGlyphIndex(&fontinfo, codepoint);
-        //indexcache[codepoint] = index;
+        uint32_t index = FT_Get_Char_Index(fontface, codepoint);
+        indexcache[codepoint] = index;
         return index;
     }
 }
@@ -1901,38 +1919,46 @@ uint32_t glyph_lookup(uint32_t codepoint)
 struct glyph
 {
     renderer::texture * texture = 0;
-    int w, h, x, y;
-    float advance;
-    float kern;
-    uint32_t index;
+    int w, h;
+    float x, y;
+    float x_advance;
+    float y_advance;
+    uint64_t index;
     renderer * myrenderer = 0;
     
-    glyph(uint32_t codepoint, float size, renderer * myrenderer)
+    glyph(const hb_glyph_info_t & info, const hb_glyph_position_t & pos, float size, renderer * myrenderer)
     {
         if(!fontinitialized) return;
+        
+        auto error = FT_Load_Glyph(fontface, info.codepoint, FT_LOAD_RENDER);
+        if(error)
+            return;
+            
         this->myrenderer = myrenderer;
         
-        float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
-        index = glyph_lookup(codepoint);
+        // hb_glyph_info_t.codepoint is actually the glyph index once hb_shape has been run
+        index = info.codepoint;
         
-        auto data = stbtt_GetGlyphBitmap(&fontinfo, fontscale, fontscale, index, &w, &h, &x, &y);
-        if(data)
+        auto bitmap = fontface->glyph->bitmap;
+        
+        w = bitmap.width;
+        h = bitmap.rows;
+        x = pos.x_offset/64.0;
+        y = pos.y_offset/64.0;
+        x_advance = pos.x_advance/64.0;
+        y_advance = pos.y_advance/64.0;
+        
+        if(bitmap.buffer && bitmap.pixel_mode == FT_PIXEL_MODE_GRAY)
         {
-            texture = myrenderer->load_texture(data, w, h);
+            texture = myrenderer->load_texture(bitmap.buffer, w, h);
             if(!texture)
                 puts("failed to generate texture");
             else
                 puts("rendered glyph");
-            free(data);
         }
         else
             puts("failed to render glyph");
         
-        int advance, bearing;
-        
-        stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
-        
-        this->advance = fontscale*advance;
     }
     ~glyph()
     {
@@ -1941,13 +1967,14 @@ struct glyph
     }
 };
 
-std::map<uint32_t, glyph*> textcache;
+std::map<hb_codepoint_t, glyph*> textcache;
 struct subtitle
 {
-    std::vector<uint32_t> codepoints;
     int initialized = false;
     float size;
     renderer * myrenderer;
+    
+    std::vector<hb_codepoint_t> glyphs;
     
     subtitle()
     {
@@ -1958,14 +1985,27 @@ struct subtitle
         if(!fontinitialized) return;
         this->size = size;
         this->myrenderer = myrenderer;
-        int status = utf8_iterate((uint8_t*)text.data(), 0, [](uint32_t codepoint, UNISHIM_PUN_TYPE * userdata) -> int {
-            if(codepoint == '\r') return 0;
-            auto self = (subtitle *)userdata;
-            if(textcache.count(codepoint) == 0)
-                textcache[codepoint] = new glyph(codepoint, self->size, self->myrenderer);
-            self->codepoints.push_back(codepoint);
-            return 0;
-        }, this);
+        
+        auto buffer = hb_buffer_create();
+        hb_buffer_add_utf8(buffer, text.data(), text.length(), 0, text.length());
+        hb_buffer_set_direction(buffer, HB_DIRECTION_LTR);
+        hb_buffer_set_script(buffer, HB_SCRIPT_COMMON);
+        hb_buffer_set_language(buffer, hb_language_get_default());
+        
+        unsigned int glyph_count;
+        hb_shape(hbfont, buffer, NULL, 0);
+        hb_glyph_info_t *     glyph_info = hb_buffer_get_glyph_infos    (buffer, &glyph_count);
+        hb_glyph_position_t * glyph_pos  = hb_buffer_get_glyph_positions(buffer, &glyph_count);
+        
+        for(unsigned int i = 0; i < glyph_count; ++i)
+        {
+            if(textcache.count(glyph_info[i].codepoint) == 0)
+                textcache[glyph_info[i].codepoint] = new glyph(glyph_info[i], glyph_pos[i], size, myrenderer);
+            glyphs.push_back(glyph_info[i].codepoint);
+        }
+        
+        hb_buffer_destroy(buffer);
+        
         initialized = true;
     }
 };
@@ -3371,34 +3411,31 @@ int main(int argc, char ** argv)
         {
             ////puts("bfr");
             uint32_t lastindex = 0;
-            float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, 24);
+            float fontscale = 1;
             
             int ascent, descent, linegap;
-            stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
-            float actual_descent = descent*fontscale;
-            float actual_ascent = ascent*fontscale;
+            //stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
+            float actual_descent = fontface->size->metrics.descender / float(1<<6);
+            float actual_ascent  = fontface->size->metrics.ascender / float(1<<6);
+            float height = fontface->size->metrics.height / float(1<<6);
             float x = 0;
-            float y = myrenderer.h + actual_descent - 5;
+            float y = myrenderer.h + actual_descent;
             
-            myrenderer.draw_rect(0, y - actual_ascent, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
+            myrenderer.draw_rect(0, myrenderer.h - height - 5, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
             
             int i = 0;
-            for(auto c : currentsubtitle.codepoints)
+            for(auto c : currentsubtitle.glyphs)
             {
-                ////puts("a");
                 auto glyph = textcache[c];
-                ////puts("y");
-                if(glyph->texture)
-                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y), 0.2);
                 
-                if(lastindex)
-                    x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, glyph->index);
-                ////puts("u");
+                if(glyph->texture)
+                    myrenderer.draw_text_texture(glyph->texture, round(x+glyph->x), round(y+glyph->y-glyph->h), 0.2);
+                
                 lastindex = glyph->index;
                 
-                x += glyph->advance;
+                x += glyph->x_advance;
+                y -= glyph->y_advance;
                 
-                ////puts("b");
                 i++;
             }
         }

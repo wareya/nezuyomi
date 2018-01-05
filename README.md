@@ -130,6 +130,20 @@ Example using imagemagick and tesseract 4 on windows (tessearct.exe living in PR
 
 ## compilation
 
-Windows: download and extract GLFW's .a and .dll files to depends/. Run compile.sh from a mingw environment. **Nezuyomi requires a C++17 compiler.**
+**Nezuyomi requires a C++17 compiler.**
 
-Linux: rewrite compile-freebsd.sh to make up for differences between FreeBSD and Linux. Nezuyomi doesn't do anything windows-specific. Good luck.
+Windows:
+
+compile freetype and harfbuzz and move their .a files to depends/.
+
+harfbuzz must be compiled **as a static library, with the standard library statically linked** and **with freetype support enabled** and **using the same compiler toolchain you will compile nezuyomi with**. compiling harfbuzz requires cmake.
+
+download and extract GLFW's .a and .dll files to depends/.
+
+Run compile.sh from a mingw environment.
+
+Linux:
+
+rewrite compile-freebsd.sh. It's out of date.
+
+Nezuyomi doesn't do anything windows-specific. Good luck.
