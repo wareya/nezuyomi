@@ -3417,7 +3417,7 @@ int main(int argc, char ** argv)
             float actual_ascent  = fontface->size->metrics.ascender / float(1<<6);
             float height = fontface->size->metrics.height / float(1<<6);
             float x = 0;
-            float y = myrenderer.h + actual_descent - 5;
+            float y = myrenderer.h + actual_descent - 3;
             
             myrenderer.draw_rect(0, myrenderer.h - height - 5, myrenderer.w, myrenderer.h, 0, 0, 0, 0.65, true);
             
