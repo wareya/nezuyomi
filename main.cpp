@@ -1533,6 +1533,7 @@ void myMouseEventCallback(GLFWwindow * win, int key, int scancode, int action, i
 {
     
 }
+void clear_current();
 // FIXME: store event in a buffer with a mutex around it
 void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int mods)
 {
@@ -1636,6 +1637,11 @@ void myKeyEventCallback(GLFWwindow * win, int key, int scancode, int action, int
             invert_x = !invert_x;
             if(invert_x) puts("Switched to manga (right to left) mode");
             else puts("Switched to western (left to right) mode");
+        }
+        if(key == GLFW_KEY_H)
+        {
+            puts("Clearing current subtitle/region");
+            clear_current();
         }
     }
 }
@@ -2044,6 +2050,12 @@ std::vector<region> regions;
 region * currentregion = 0;
 
 region tempregion = {0,0,0,0,"",0,0,0,0,0,1};
+
+void clear_current()
+{
+    currentregion->text = "";
+    currentsubtitle = subtitle();
+}
 
 void load_regions(std::string folder, std::string filename, int corewidth, int coreheight)
 {
@@ -2932,9 +2944,9 @@ int main(int argc, char ** argv)
                     if(gamma > 3.0) gamma = 3.0;
                     
                     std::string about = "";
-                    if(gamma > 0)
+                    if(gamma > 1)
                         about = " (darkens grays)";
-                    if(gamma < 0)
+                    if(gamma < 1)
                         about = " (lightens grays)";
                     
                     currentsubtitle = subtitle(std::string("gamma correction exponent set to ")+std::to_string(gamma)+about, 24, &myrenderer);
@@ -3057,6 +3069,9 @@ int main(int argc, char ** argv)
                     }
                     else
                     {
+                        if(&r == currentregion)
+                            r.gamma = gamma;
+                        
                         int img_w, img_h;
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
                         
