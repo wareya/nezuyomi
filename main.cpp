@@ -2983,221 +2983,291 @@ int main(int argc, char ** argv)
         
         static double m1_mx_press = 0;
         static double m1_my_press = 0;
+        static double m1_shift_press = 0;
         static double m1_mx_release = 0;
         static double m1_my_release = 0;
+        static double m1_press_region_x1 = 0;
+        static double m1_press_region_x2 = 0;
+        static double m1_press_region_y1 = 0;
+        static double m1_press_region_y2 = 0;
         
         if(current_m1 == GLFW_PRESS and last_m1 != GLFW_PRESS)
         {
             double mx, my;
-            glfwGetCursorPos(win, & mx, & my);
+            glfwGetCursorPos(win, &mx, &my);
             
             m1_mx_press = mx;
             m1_my_press = my;
+            m1_shift_press = glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) | glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT);
+            if(m1_shift_press and currentregion != 0)
+            {
+                m1_press_region_x1 = currentregion->x1;
+                m1_press_region_x2 = currentregion->x2;
+                m1_press_region_y1 = currentregion->y1;
+                m1_press_region_y2 = currentregion->y2;
+            }
+            else
+            {
+                m1_press_region_x1 = 0;
+                m1_press_region_x2 = 0;
+                m1_press_region_y1 = 0;
+                m1_press_region_y2 = 0;
+                m1_shift_press = 0;
+            }
         }
         else if(current_m1 != GLFW_PRESS and last_m1 == GLFW_PRESS)
         {
-            double mx, my;
-            glfwGetCursorPos(win, & mx, & my);
-            m1_mx_release = mx;
-            m1_my_release = my;
-            
-            bool foundregion = false;
-            for(region & r : regions)
+            if(m1_shift_press == 0)
             {
-                float x1 = (r.x1*scale-x);
-                float y1 = (r.y1*scale-y);
-                float x2 = (r.x2*scale-x);
-                float y2 = (r.y2*scale-y);
+                double mx, my;
+                glfwGetCursorPos(win, &mx, &my);
+                m1_mx_release = mx;
+                m1_my_release = my;
                 
-                bool canbepressing = true;
-                
-                if (m1_mx_release < x1 or m1_mx_release > x2 or m1_mx_press < x1 or m1_mx_press > x2 
-                 or m1_my_release < y1 or m1_my_release > y2 or m1_my_press < y1 or m1_my_press > y2)
-                    canbepressing = false;
-                
-                if(r.skewmode == 1)
+                bool foundregion = false;
+                for(region & r : regions)
                 {
-                    auto xs = r.xskew*0.01;
-                    auto ys = r.yskew*0.01;
+                    float x1 = (r.x1*scale-x);
+                    float y1 = (r.y1*scale-y);
+                    float x2 = (r.x2*scale-x);
+                    float y2 = (r.y2*scale-y);
                     
-                    float cx1 = r.x1-(r.x1+r.x2)/2.0f;
-                    float cx2 = r.x2-(r.x1+r.x2)/2.0f;
-                    float cy1 = r.y1-(r.y1+r.y2)/2.0f;
-                    float cy2 = r.y2-(r.y1+r.y2)/2.0f;
+                    bool canbepressing = true;
                     
-                    float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
-                    float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
-                    
-                    float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
-                    float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
-                    
-                    float minx = std::min(tx1, tx2);
-                    float miny = std::min(ty1, ty2);
-                    
-                    float xpad = fabs(minx-cx1);
-                    float ypad = fabs(miny-cy1);
-                    
-                    float tempx = (m1_mx_release+x)/scale-(r.x1+r.x2)/2.0f;
-                    float tempy = (m1_my_release+y)/scale-(r.y1+r.y2)/2.0f;
-                    
-                    float skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
-                    float sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
-                    
-                    if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
+                    if (m1_mx_release < x1 or m1_mx_release > x2 or m1_mx_press < x1 or m1_mx_press > x2 
+                     or m1_my_release < y1 or m1_my_release > y2 or m1_my_press < y1 or m1_my_press > y2)
                         canbepressing = false;
                     
-                    tempx = (m1_mx_press+x)/scale-(r.x1+r.x2)/2.0f;
-                    tempy = (m1_my_press+y)/scale-(r.y1+r.y2)/2.0f;
-                    
-                    skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
-                    sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
-                    
-                    if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
-                        canbepressing = false;
-                }
-                if(canbepressing)
-                {
-                    if(r.text != std::string(""))
+                    if(r.skewmode == 1)
                     {
-                        glfwSetClipboardString(win, r.text.data());
-                        puts(r.text.data());
-                        currentsubtitle = subtitle(r.text, 24, &myrenderer);
+                        auto xs = r.xskew*0.01;
+                        auto ys = r.yskew*0.01;
                         
-                        currentregion = &r;
-                        foundregion = true;
-                        break;
+                        float cx1 = r.x1-(r.x1+r.x2)/2.0f;
+                        float cx2 = r.x2-(r.x1+r.x2)/2.0f;
+                        float cy1 = r.y1-(r.y1+r.y2)/2.0f;
+                        float cy2 = r.y2-(r.y1+r.y2)/2.0f;
+                        
+                        float tx1 = cx1/(1-xs*ys) + cy1*xs/(xs*ys-1);
+                        float tx2 = cx1/(1-xs*ys) + cy2*xs/(xs*ys-1);
+                        
+                        float ty1 = cy1/(1-ys*xs) + cx1*ys/(xs*ys-1);
+                        float ty2 = cy1/(1-ys*xs) + cx2*ys/(xs*ys-1);
+                        
+                        float minx = std::min(tx1, tx2);
+                        float miny = std::min(ty1, ty2);
+                        
+                        float xpad = fabs(minx-cx1);
+                        float ypad = fabs(miny-cy1);
+                        
+                        float tempx = (m1_mx_release+x)/scale-(r.x1+r.x2)/2.0f;
+                        float tempy = (m1_my_release+y)/scale-(r.y1+r.y2)/2.0f;
+                        
+                        float skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
+                        float sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
+                        
+                        if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
+                            canbepressing = false;
+                        
+                        tempx = (m1_mx_press+x)/scale-(r.x1+r.x2)/2.0f;
+                        tempy = (m1_my_press+y)/scale-(r.y1+r.y2)/2.0f;
+                        
+                        skx = tempx + xs*tempy + (r.x1+r.x2)/2.0f;
+                        sky = tempy + ys*tempx + (r.y1+r.y2)/2.0f;
+                        
+                        if(skx < r.x1+xpad or skx > r.x2-xpad or sky < r.y1+ypad or sky > r.y2-ypad)
+                            canbepressing = false;
                     }
-                    else
+                    if(canbepressing)
                     {
-                        if(&r == currentregion)
-                            r.gamma = gamma;
+                        if(r.text != std::string(""))
+                        {
+                            glfwSetClipboardString(win, r.text.data());
+                            puts(r.text.data());
+                            currentsubtitle = subtitle(r.text, 24, &myrenderer);
+                            
+                            currentregion = &r;
+                            foundregion = true;
+                            break;
+                        }
+                        else
+                        {
+                            if(&r == currentregion)
+                                r.gamma = gamma;
+                            
+                            int img_w, img_h;
+                            auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
+                            
+                            puts("writing cropped image to disk");
+                            auto f = wrap_fopen((profile()+"temp_ocr.png").data(), "wb");
+                            if(f)
+                            {
+                                stbi_write_png_to_func([](void * file, void * data, int size){
+                                    fwrite(data, 1, size, (FILE *) file);
+                                }, f, img_w, img_h, 4, data, img_w*4);
+                                fclose(f);
+                            }
+                            free(data);
+                            puts("done");
+                            
+                            puts((profile()+"temp_ocr.png").data());
+                            puts((profile()+"ocr.txt").data());
+                            
+                            r.pixel_scale = textscale;
+                            r.yskew = shear_y;
+                            r.xskew = shear_x;
+                            
+                            std::string scale_double_percent = std::to_string(32/float(textscale)*200);
+                            
+                            std::string xshear_string = std::to_string(shear_y/100.0);
+                            std::string yshear_string = std::to_string(shear_x/100.0);
+                            
+                            std::string ocrfile;
+                            
+                            if(ocrmode == 1)
+                                ocrfile = (profile()+"ocr2.txt");
+                            else if(ocrmode == 2)
+                                ocrfile = (profile()+"ocr3.txt");
+                            else if(ocrmode == 3)
+                                ocrfile = (profile()+"ocr4.txt");
+                            else if(ocrmode == 4)
+                                ocrfile = (profile()+"ocr5.txt");
+                            else if(ocrmode == 5)
+                                ocrfile = (profile()+"ocr6.txt");
+                            else
+                                ocrfile = (profile()+"ocr.txt");
+                            
+                            ocr((profile()+"temp_ocr.png").data(), ocrfile.data(), (profile()+"temp_text.txt").data(), (scale_double_percent.data()), xshear_string.data(), yshear_string.data());
+                            
+                            auto f2 = wrap_fopen((profile()+"temp_text.txt").data(), "rb");
+                            if(f2)
+                            {
+                                fseek(f2, 0, SEEK_END);
+                                size_t len = ftell(f2);
+                                fseek(f2, 0, SEEK_SET);
+                                
+                                char * s = (char *)malloc(len+1);
+                                
+                                if(s)
+                                {
+                                    fread(s, 1, len, f2);
+                                    s[len] = 0;
+                                    
+                                    r.text = std::string(s);
+                                    glfwSetClipboardString(win, s);
+                                    
+                                    puts(r.text.data());
+                                    currentsubtitle = subtitle(r.text, 24, &myrenderer);
+                                    puts("rjkrek");
+                                    
+                                    free(s);
+                                    puts("fddrtht");
+                                }
+                                fclose(f2);
+                            }
+                            
+                            currentregion = &r;
+                            
+                            write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
+                            foundregion = true;
+                            break;
+                        }
+                    }
+                }
+                if(!foundregion)
+                {
+                    if(abs(m1_mx_release-m1_mx_press) > 2 and abs(m1_my_release-m1_my_press) > 2)
+                    {
+                        float lowerx = std::min(m1_mx_release, m1_mx_press);
+                        float lowery = std::min(m1_my_release, m1_my_press);
+                        float upperx = std::max(m1_mx_release, m1_mx_press);
+                        float uppery = std::max(m1_my_release, m1_my_press);
+                        regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale});
+                        auto & r = regions[regions.size()-1];
+                        r.gamma = gamma;
                         
                         int img_w, img_h;
                         auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
-                        
-                        puts("writing cropped image to disk");
-                        auto f = wrap_fopen((profile()+"temp_ocr.png").data(), "wb");
-                        if(f)
-                        {
-                            stbi_write_png_to_func([](void * file, void * data, int size){
-                                fwrite(data, 1, size, (FILE *) file);
-                            }, f, img_w, img_h, 4, data, img_w*4);
-                            fclose(f);
-                        }
+                        int estimated_width = estimate_width(data, img_w, img_h);
+                        printf("estimated width %d\n", estimated_width);
                         free(data);
-                        puts("done");
                         
-                        puts((profile()+"temp_ocr.png").data());
-                        puts((profile()+"ocr.txt").data());
+                        float pxwide = estimated_width;
+                        int estimate = pxwide/textlines * (1 - float(textlines-1)/(textlines)*paddingestimate); // estimate removal of internal padding
+                        if(estimate < 7) estimate = 7;
                         
-                        r.pixel_scale = textscale;
-                        r.yskew = shear_y;
-                        r.xskew = shear_x;
+                        currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
                         
-                        std::string scale_double_percent = std::to_string(32/float(textscale)*200);
+                        currentregion = &(regions[regions.size()-1]);
+                        currentregion->yskew = shear_y;
+                        currentregion->xskew = shear_x;
+                        currentregion->gamma = gamma;
                         
-                        std::string xshear_string = std::to_string(shear_y/100.0);
-                        std::string yshear_string = std::to_string(shear_x/100.0);
-                        
-                        std::string ocrfile;
-                        
-                        if(ocrmode == 1)
-                            ocrfile = (profile()+"ocr2.txt");
-                        else if(ocrmode == 2)
-                            ocrfile = (profile()+"ocr3.txt");
-                        else if(ocrmode == 3)
-                            ocrfile = (profile()+"ocr4.txt");
-                        else if(ocrmode == 4)
-                            ocrfile = (profile()+"ocr5.txt");
-                        else if(ocrmode == 5)
-                            ocrfile = (profile()+"ocr6.txt");
-                        else
-                            ocrfile = (profile()+"ocr.txt");
-                        
-                        ocr((profile()+"temp_ocr.png").data(), ocrfile.data(), (profile()+"temp_text.txt").data(), (scale_double_percent.data()), xshear_string.data(), yshear_string.data());
-                        
-                        auto f2 = wrap_fopen((profile()+"temp_text.txt").data(), "rb");
-                        if(f2)
-                        {
-                            fseek(f2, 0, SEEK_END);
-                            size_t len = ftell(f2);
-                            fseek(f2, 0, SEEK_SET);
-                            
-                            char * s = (char *)malloc(len+1);
-                            
-                            if(s)
-                            {
-                                fread(s, 1, len, f2);
-                                s[len] = 0;
-                                
-                                r.text = std::string(s);
-                                glfwSetClipboardString(win, s);
-                                
-                                puts(r.text.data());
-                                currentsubtitle = subtitle(r.text, 24, &myrenderer);
-                                puts("rjkrek");
-                                
-                                free(s);
-                                puts("fddrtht");
-                            }
-                            fclose(f2);
-                        }
-                        
-                        currentregion = &r;
-                        
-                        write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
-                        foundregion = true;
-                        break;
+                        tempregion = {0,0,0,0,"",0,0,0,0,0,1};
                     }
                 }
             }
-            if(!foundregion)
+            else // held shift
             {
-                if(abs(m1_mx_release-m1_mx_press) > 2 and abs(m1_my_release-m1_my_press) > 2)
+                if(currentregion != 0)
                 {
-                    float lowerx = std::min(m1_mx_release, m1_mx_press);
-                    float lowery = std::min(m1_my_release, m1_my_press);
-                    float upperx = std::max(m1_mx_release, m1_mx_press);
-                    float uppery = std::max(m1_my_release, m1_my_press);
-                    regions.push_back({int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale});
-                    auto & r = regions[regions.size()-1];
-                    r.gamma = gamma;
-                    
-                    int img_w, img_h;
-                    auto data = crop_copy(myimage, r.x1, r.y1, r.x2, r.y2, &img_w, &img_h, r.skewmode?r.yskew:0, r.skewmode?r.xskew:0, r.gamma);
-                    int estimated_width = estimate_width(data, img_w, img_h);
-                    printf("estimated width %d\n", estimated_width);
-                    free(data);
-                    
-                    float pxwide = estimated_width;
-                    int estimate = pxwide/textlines * (1 - float(textlines-1)/(textlines)*paddingestimate); // estimate removal of internal padding
-                    if(estimate < 7) estimate = 7;
-                    
-                    currentsubtitle = subtitle(std::string("estimated text size (if vertical and ")+std::to_string(textlines)+std::string(".0 lines): ")+std::to_string(estimate), 24, &myrenderer);
-                    
-                    currentregion = &(regions[regions.size()-1]);
-                    currentregion->yskew = shear_y;
-                    currentregion->xskew = shear_x;
-                    currentregion->gamma = gamma;
-                    
-                    tempregion = {0,0,0,0,"",0,0,0,0,0,1};
+                    write_regions(folder, mydir_filenames[index], myimage->w, myimage->h);
                 }
             }
         }
         else if(current_m1 == GLFW_PRESS)
         {
-            double mx, my;
-            glfwGetCursorPos(win, & mx, & my);
-            if(abs(mx-m1_mx_press) > 2 and abs(my-m1_my_press) > 2)
+            if(m1_shift_press == 0)
             {
-                float lowerx = std::min(mx, m1_mx_press);
-                float upperx = std::max(mx, m1_mx_press);
-                float lowery = std::min(my, m1_my_press);
-                float uppery = std::max(my, m1_my_press);
-                tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_y, shear_x, 1, gamma};
+                double mx, my;
+                glfwGetCursorPos(win, &mx, &my);
+                if(abs(mx-m1_mx_press) > 2 and abs(my-m1_my_press) > 2)
+                {
+                    float lowerx = std::min(mx, m1_mx_press);
+                    float upperx = std::max(mx, m1_mx_press);
+                    float lowery = std::min(my, m1_my_press);
+                    float uppery = std::max(my, m1_my_press);
+                    tempregion = {int((lowerx+x)/scale), int((lowery+y)/scale), int((upperx+x)/scale), int((uppery+y)/scale), "", ocrmode, textscale, shear_y, shear_x, 1, gamma};
+                }
+                else
+                    tempregion = {0,0,0,0,"",0,0,0,0,0,1};
             }
-            else
-                tempregion = {0,0,0,0,"",0,0,0,0,0,1};
+            else if(currentregion != 0)
+            {
+                double mx, my;
+                glfwGetCursorPos(win, &mx, &my);
+                double smx = (m1_mx_press+x)/scale;
+                double smy = (m1_my_press+y)/scale;
+                // FIXME: should probably just calculate which mode to use at the beginning of this state lol
+                // bottom side
+                if(smx >= m1_press_region_x1 and smx <= m1_press_region_x2 and smy > m1_press_region_y2)
+                {
+                    currentregion->y2 = m1_press_region_y2 + (my-m1_my_press)/scale;
+                    if(currentregion->y2 <= currentregion->y1)
+                        currentregion->y2 = currentregion->y1+1;
+                }
+                // top side
+                else if(smx >= m1_press_region_x1 and smx <= m1_press_region_x2 and smy < m1_press_region_y1)
+                {
+                    currentregion->y1 = m1_press_region_y1 + (my-m1_my_press)/scale;
+                    if(currentregion->y1 >= currentregion->y2)
+                        currentregion->y1 = currentregion->y2-1;
+                }
+                // right side
+                else if(smy >= m1_press_region_y1 and smy <= m1_press_region_y2 and smx > m1_press_region_x2)
+                {
+                    currentregion->x2 = m1_press_region_x2 + (mx-m1_mx_press)/scale;
+                    if(currentregion->x2 <= currentregion->x1)
+                        currentregion->x2 = currentregion->x1+1;
+                }
+                // left side
+                else if(smy >= m1_press_region_y1 and smy <= m1_press_region_y2 and smx < m1_press_region_x1)
+                {
+                    currentregion->x1 = m1_press_region_x1 + (mx-m1_mx_press)/scale;
+                    if(currentregion->x1 >= currentregion->x2)
+                        currentregion->x1 = currentregion->x2-1;
+                }
+            }
         }
         else
             tempregion = {0,0,0,0,"",0,0,0,0,0,1};
