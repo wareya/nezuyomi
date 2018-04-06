@@ -3153,15 +3153,21 @@ int main(int argc, char ** argv)
                                     fread(s, 1, len, f2);
                                     s[len] = 0;
                                     
-                                    r.text = std::string(s);
+                                    // some OCR programs output formfeed characters when invoked by nezuyomi for some reason
+                                    auto mystring = std::string();
+                                    for(char c : std::string(s))
+                                        if (c != 0x0C and c != '\r')
+                                            mystring += c;
+                                    
+                                    r.text = mystring;
                                     glfwSetClipboardString(win, s);
                                     
                                     puts(r.text.data());
                                     currentsubtitle = subtitle(r.text, 24, &myrenderer);
-                                    puts("rjkrek");
+                                    //puts("rjkrek");
                                     
                                     free(s);
-                                    puts("fddrtht");
+                                    //puts("fddrtht");
                                 }
                                 fclose(f2);
                             }
