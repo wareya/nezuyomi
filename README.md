@@ -1,3 +1,5 @@
+NOTE: Nezuyomi is abandoned and hard to set up properly and nobody should actually use it unless they're manually batch OCRing something. It did not reach a development state where using it for normal reading was a good idea.
+
 # nezuyomi
 Nezuyomi is an extremely lightweight image viewer meant for reading manga.
 
